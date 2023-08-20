@@ -1,0 +1,9 @@
+fuzzywuzzy
+numpy
+pandas
+rapidfuzz
+tensorflow
+recordlinkage
+gradio
+pyap
+pytest
