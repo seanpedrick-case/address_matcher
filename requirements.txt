@@ -3,6 +3,7 @@ numpy
 pandas
 rapidfuzz
 tensorflow
+torch
 recordlinkage
 gradio==3.40.1
 pyap

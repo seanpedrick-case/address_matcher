@@ -151,6 +151,9 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
             if "Matched with ref record" in Matcher.search_df.columns:
                 previously_matched = Matcher.pre_filter_search_df["Matched with ref record"] == True 
                 Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
+
+                Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop(["Combined address", "ref matched address", "Matched with ref record",	"UPRN", "index"],axis=1)
+                Matcher.search_df = Matcher.search_df.drop(["Combined address", "ref matched address", "Matched with ref record",	"UPRN", "index"],axis=1)
                 
                 Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0) | (previously_matched)]
                 Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0) & ~(previously_matched)]
@@ -165,7 +168,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
             Matcher.ref = Matcher.ref[(postcode_found_in_ref)]
 
             
-            
+            Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("postcode_search_area", axis = 1)
             Matcher.search_df = Matcher.search_df.drop("postcode_search_area", axis = 1)
             Matcher.ref = Matcher.ref.drop("postcode_search_area", axis = 1)
             Matcher.excluded_df = Matcher.excluded_df.drop("postcode_search_area", axis = 1)
