@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.14.4
+#       jupytext_version: 1.15.0
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -33,6 +33,12 @@ import gradio as gr
 import tensorflow as tf
 import recordlinkage
 
+# +
+# #!pip install tensorflow
+# #!pip install recordlinkage
+# #!pip install rapidfuzz
+# -
+
 # Base folder is where the code file is stored
 base_folder = Path(os.getcwd())
 input_folder = base_folder/"Input/"
@@ -42,15 +48,24 @@ prep_folder = base_folder/"Helper functions/"
 
 #import tools
 from tools.constants import *
+
+# +
+#tools.fuzzy_funcs.labels_list = labels_list
+
 from tools import fuzzy_funcs
 
-import importlib
-importlib.reload(fuzzy_funcs)
 
+# -
+
+# import importlib
+# importlib.reload(fuzzy_funcs)
 
 def put_columns_in_df(in_file):
-    df = pd.read_csv(in_file.name, delimiter = ",", low_memory=False)
-    return gr.Dropdown.update(choices=list(df.columns))
+    df = fuzzy_funcs.read_file(in_file.name)
+    #print(df.columns)
+    #print(list(df.columns))
+    new_choices = list(df.columns)
+    return gr.Dropdown.update(choices=new_choices)
 
 
 def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, progress=gr.Progress(), InitMatch = InitMatch):  
@@ -72,10 +87,16 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
     
     FuzzyNotStdMatch = fuzzy_funcs.run_fuzzy_match(Matcher = copy.copy(FuzzyNotStdMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
     print(FuzzyNotStdMatch.output_summary)
-        
+
+    FuzzyNotStdMatch.results_on_orig_df = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNotStdMatch.pre_filter_search_df, FuzzyNotStdMatch.results_on_orig_df, orig_addr_col = FuzzyNotStdMatch.search_df_key_field, match_col = 'Matched with ref record')
+    FuzzyNotStdMatch.pre_filter_search_df = FuzzyNotStdMatch.results_on_orig_df
     FuzzyNotStdMatch.search_df_not_matched = fuzzy_funcs.filter_not_matched(FuzzyNotStdMatch.match_results_output, FuzzyNotStdMatch.search_df, FuzzyNotStdMatch.search_df_key_field)
 
-    if len(FuzzyNotStdMatch.search_df_not_matched) == 0: return FuzzyNotStdMatch.summary, [FuzzyNotStdMatch.match_outputs_name, FuzzyNotStdMatch.results_orig_df_name]
+    if len(FuzzyNotStdMatch.search_df_not_matched) == 0: 
+        overall_toc = time.perf_counter()
+        time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
+        FuzzyNotStdMatch.output_summary = FuzzyNotStdMatch.output_summary + ". Neural net match not attempted." + time_out
+        return FuzzyNotStdMatch.output_summary, [FuzzyNotStdMatch.match_outputs_name, FuzzyNotStdMatch.results_orig_df_name]
 
 
     ''' Run fuzzy match on standardised dataset '''
@@ -88,27 +109,30 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
 
     ''' Continue if reference file in correct format, and neural net model exists '''
     if ((len(FuzzyStdMatch.search_df_not_matched) == 0) | (FuzzyStdMatch.standard_llpg_format == False) | (os.path.exists(FuzzyStdMatch.model_dir_name + '/saved_model.zip') == False)):
-        FuzzyStdMatch.output_summary = FuzzyStdMatch.output_summary + ". Neural net match not attempted."
+        overall_toc = time.perf_counter()
+        time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
+        FuzzyStdMatch.output_summary = FuzzyStdMatch.output_summary + ". Neural net match not attempted." + time_out
         return FuzzyStdMatch.output_summary, [FuzzyStdMatch.match_outputs_name, FuzzyStdMatch.results_orig_df_name]
     
     
-    
     ''' NEURAL NET '''
-    
-    progress(.50, desc="Neural net - non-standardised dataset")
-    df_name = "Neural net not standardised"
 
     ''' First on non-standardised addresses '''
+    progress(.50, desc="Neural net - non-standardised dataset")
+    df_name = "Neural net not standardised"
+    
     
     FuzzyNNetNotStdMatch = fuzzy_funcs.run_fuzzy_match(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
     FuzzyNNetNotStdMatch = fuzzy_funcs.combine_two_matches(FuzzyStdMatch, FuzzyNNetNotStdMatch, df_name)
     
 
     if (len(FuzzyNNetNotStdMatch.search_df_not_matched) == 0):
+        overall_toc = time.perf_counter()
+        time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
+        FuzzyNNetNotStdMatch.output_summary + time_out
         return FuzzyNNetNotStdMatch.output_summary, [FuzzyNNetNotStdMatch.match_outputs_name, FuzzyNNetNotStdMatch.results_orig_df_name]
 
 
-    
     ''' Next on standardised addresses '''
     progress(.75, desc="Neural net - standardised dataset")
     df_name = "Neural net standardised"
@@ -116,21 +140,21 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
     FuzzyNNetStdMatch = fuzzy_funcs.run_fuzzy_match(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
     FuzzyNNetStdMatch = fuzzy_funcs.combine_two_matches(FuzzyNNetNotStdMatch, FuzzyNNetStdMatch, df_name)
 
-    FuzzyNNetStdMatch.match_results_output = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.match_results_output, FuzzyNNetStdMatch.match_results_output, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field)    
-    FuzzyNNetStdMatch.results_on_orig_df = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.results_on_orig_df, FuzzyNNetStdMatch.results_on_orig_df, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field, match_col = 'Matched with ref record')
+    #FuzzyNNetStdMatch.match_results_output = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.match_results_output, FuzzyNNetStdMatch.match_results_output, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field)    
+    #FuzzyNNetStdMatch.results_on_orig_df = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.results_on_orig_df, FuzzyNNetStdMatch.results_on_orig_df, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field, match_col = 'Matched with ref record')
     
 
     overall_toc = time.perf_counter()
-    
     time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
-    #print(time_out)
     summary_of_summaries = FuzzyNotStdMatch.output_summary + "\n" + FuzzyStdMatch.output_summary + "\n" + FuzzyNNetStdMatch.output_summary + "\n" + time_out
     
     return summary_of_summaries, [FuzzyNNetStdMatch.match_outputs_name, FuzzyNNetStdMatch.results_orig_df_name]
 # +
 ''' Create the gradio interface '''
 
-with gr.Blocks() as demo:
+block = gr.Blocks(theme = gr.themes.Base())
+
+with block as demo:
     gr.Markdown(
     """
     # Address matcher
@@ -138,8 +162,7 @@ with gr.Blocks() as demo:
     
     The tool can accept csv.gz files. You need to specify the address columns of the file to match specifically in the address column area with postcode at the end. 
     
-    Use the 'New Column' button to create a new cell for each column name. After you have chosen a reference file, an address match file, and specified its
-    address columns (plus postcode), you can press 'Match addresses' to run the tool.
+    Use the 'New Column' button to create a new cell for each column name. After you have chosen a reference file, an address match file, and specified its address columns (plus postcode), you can press 'Match addresses' to run the tool.
     """)
     
     with gr.Accordion("I have multiple addresses", open = True):
@@ -184,4 +207,7 @@ with gr.Blocks() as demo:
 
 demo.queue(concurrency_count=1).launch(debug=True)
 # -
+
+
+
 

@@ -4,6 +4,6 @@ pandas
 rapidfuzz
 tensorflow
 recordlinkage
-gradio
+gradio==3.40.1
 pyap
 pytest

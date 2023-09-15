@@ -1,5 +1,10 @@
 import os
 import pandas as pd
+import pickle
+import torch
+import string
+
+from .pytorch_models import *
 
 # +
 ''' Fuzzywuzzy/Rapidfuzz scorer to use. Options are: ratio, partial_ratio, token_sort_ratio, partial_token_sort_ratio,
@@ -13,7 +18,7 @@ fuzzy_match_limit = 45
 
 fuzzy_search_addr_limit = 20
 
-filter_to_lambeth_pcodes= False 
+filter_to_lambeth_pcodes= True 
 # -
 
 standardise = False
@@ -38,21 +43,30 @@ file_name = "search"
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 print(ROOT_DIR)
 
-#model_stub = "addr_model_out_lon_keras"
-model_stub = "addr_model_out_lon"
-#model_stub = "two_epoch"
-#model_stub = "two_epoch_128"
-#model_stub = "two_epoch_64_perf_3"
-#model_stub = "tenK"
+# Uncomment these lines for the tensorflow model
+#model_type = "tf"
+#model_stub = "addr_model_out_lon"
+#model_version = "00000001"
+#file_step_suffix = "550" # I add a suffix to output files to be able to separate comparisons of test data from the same model with different steps e.g. '350' indicates a model that has been through 350,000 steps of training
 
-# I add a suffix to output files to be able to separate comparisons of test data from the same model with different steps
-# e.g. '350' indicates a model that has been through 350,000 steps of training
+# Uncomment these lines for the pytorch model
+model_type = "lstm"
+model_stub = "pytorch/lstm"
+model_version = ""
+file_step_suffix = ""
+data_sample_size = 476887
+N_EPOCHS = 10
 
-#file_step_suffix = "2"
-#file_step_suffix = "3"
-file_step_suffix = "550"
+word_to_index = [] 
+cat_to_idx = {}
+vocab = []
+device = "cpu"
 
-model_dir_name = os.path.join(ROOT_DIR, "nnet_model" , model_stub , "00000001")
+global labels_list
+labels_list = []
+
+
+model_dir_name = os.path.join(ROOT_DIR, "nnet_model" , model_stub , model_version)
 print(model_dir_name)
 
 model_path = os.path.join(model_dir_name, "saved_model.zip")
@@ -62,13 +76,16 @@ print(model_path)
 if os.path.exists(model_path):
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1' # Better to go without GPU to avoid 'out of memory' issues
-
+    device = "cpu"
+        
     import tensorflow as tf
     import recordlinkage
 
     tf.config.list_physical_devices('GPU')
 
     ## The labels_list object defines the structure of the prediction outputs. It must be the same as what the model was originally trained on
+    
+
     
     ''' Load pre-trained model '''
     
@@ -78,7 +95,100 @@ if os.path.exists(model_path):
         zip_ref.extractall(model_dir_name)
         
     if model_stub == "addr_model_out_lon":
+        
+        # Number of labels in total (+1 for the blank category)
+        n_labels = len(labels_list) + 1
+
+        # Allowable characters for the encoded representation
+        vocab = list(string.digits + string.ascii_lowercase + string.punctuation + string.whitespace)
+        
+        #print("Loading TF model")
+        
         exported_model = tf.saved_model.load(model_dir_name)
+ 
+        labels_list = [
+        'SaoText',  # 1
+        'SaoStartNumber',  # 2
+        'SaoStartSuffix',  # 3
+        'SaoEndNumber',  # 4
+        'SaoEndSuffix',  # 5
+        'PaoText',  # 6
+        'PaoStartNumber',  # 7
+        'PaoStartSuffix',  # 8
+        'PaoEndNumber',  # 9
+        'PaoEndSuffix',  # 10
+        'Street',  # 11
+        'PostTown',  # 12
+        'AdministrativeArea', #13
+        'Postcode'  # 14
+        ]
+        
+        
+        
+
+    elif "pytorch" in model_stub:
+        
+        labels_list = [
+        'SaoText',  # 1
+        'SaoStartNumber',  # 2
+        'SaoStartSuffix',  # 3
+        'SaoEndNumber',  # 4
+        'SaoEndSuffix',  # 5
+        'PaoText',  # 6
+        'PaoStartNumber',  # 7
+        'PaoStartSuffix',  # 8
+        'PaoEndNumber',  # 9
+        'PaoEndSuffix',  # 10
+        'Street',  # 11
+        'PostTown',  # 12
+        'AdministrativeArea', #13
+        'Postcode',  # 14
+        'IGNORE'
+        ]
+        
+    #labels_list.to_csv("labels_list.csv", index = None)    
+            
+        if (model_type == "transformer") | (model_type == "gru") | (model_type == "lstm") :   
+            # Load vocab and word_to_index
+            with open(model_dir_name + "vocab.pkl", "rb") as f:
+                vocab = pickle.load(f)
+            with open(model_dir_name + "/word_to_index.pkl", "rb") as f:
+                word_to_index = pickle.load(f)
+            with open(model_dir_name + "/cat_to_idx.pkl", "rb") as f:
+                cat_to_idx = pickle.load(f)
+
+            VOCAB_SIZE = len(word_to_index)
+            OUTPUT_DIM = len(cat_to_idx) + 1 # Number of classes/categories
+            EMBEDDING_DIM = 48
+            DROPOUT = 0.1
+            PAD_TOKEN = 0
+        
+        
+            if model_type == "transformer":
+                NHEAD = 4
+                NUM_ENCODER_LAYERS = 1
+    
+                exported_model = TransformerClassifier(VOCAB_SIZE, EMBEDDING_DIM, NHEAD, NUM_ENCODER_LAYERS, OUTPUT_DIM, DROPOUT, PAD_TOKEN)
+    
+            elif model_type == "gru":
+                N_LAYERS = 3
+                HIDDEN_DIM = 128
+                exported_model = TextClassifier(VOCAB_SIZE, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, N_LAYERS, DROPOUT, PAD_TOKEN)
+    
+            elif model_type == "lstm":
+                N_LAYERS = 3
+                HIDDEN_DIM = 128
+    
+                exported_model = LSTMTextClassifier(VOCAB_SIZE, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, N_LAYERS, DROPOUT, PAD_TOKEN)
+        
+        
+            exported_model.load_state_dict(torch.load(model_dir_name + "output_model_" + str(data_sample_size) +\
+               "_" + str(N_EPOCHS) + "_" + model_type + ".pth", map_location=torch.device('cpu')))
+            exported_model.eval()
+
+            device='cpu'
+            #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            exported_model.to(device)
 
     else:
         exported_model = tf.keras.models.load_model(model_dir_name, compile=False)
@@ -86,6 +196,9 @@ if os.path.exists(model_path):
         exported_model.compile(loss='categorical_crossentropy', optimizer='adam', metrics = ['categorical_crossentropy'])
 
 else: exported_model = []
+
+import pandas as pd
+
 # +
 ''' Fuzzy method '''
 
@@ -101,7 +214,6 @@ fuzzy_method = "jarowinkler"
 # +
 ''' Required overall match score for all columns to count as a match '''
 
-#score_cut_off = 0.9
 score_cut_off = 0.987
 #score_cut_off = 0.975
 
@@ -125,9 +237,9 @@ text_columns = ["PaoText", "Street", "PostTown", "Postcode"]
 
 PaoStartNumber_weight = 2
 SaoStartNumber_weight = 2
-Street_weight = 3
+Street_weight = 2
 PostTown_weight = 0
-Postcode_weight = 1.25
+Postcode_weight = 1
 AdministrativeArea_weight = 0
 # -
 
@@ -150,8 +262,7 @@ weights["Postcode"] = Postcode_weight
 class MatcherClass:
     def __init__(self, 
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
-                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name
-                ):
+                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name, model_type, labels_list):
         
         # Fuzzy/general attributes
         self.fuzzy_scorer_used = fuzzy_scorer_used
@@ -174,16 +285,27 @@ class MatcherClass:
         self.fuzzy_method = fuzzy_method
         self.score_cut_off = score_cut_off
         self.text_columns = text_columns
-        self.weights = weights     
+        self.weights = weights
+        self.model_type = model_type
+        self.labels_list = labels_list
+        
 
         # These are variables that are added on later
+        # Pytorch optional variables
+        self.word_to_index = word_to_index 
+        self.cat_to_idx = cat_to_idx 
+        self.device = device
+        self.vocab = vocab
         
         # Join data
         self.search_df = pd.DataFrame()
+        self.excluded_df = pd.DataFrame()
+        self.pre_filter_search_df = pd.DataFrame()
         self.search_address_cols = []
         self.search_postcode_col = []
         self.search_df_key_field = []
         self.ref = pd.DataFrame()
+        self.ref_pre_filter = pd.DataFrame()
         self.ref_address_cols = []
         self.new_join_col = []
         self.in_joincol_list = []
@@ -212,5 +334,5 @@ class MatcherClass:
     
 InitMatch = MatcherClass(
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
-                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name
+                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name, model_type, labels_list
                 )

@@ -4,6 +4,7 @@ from typing import TypeVar, Dict, List, Tuple
 import string
 from rapidfuzz import process
 from rapidfuzz import fuzz
+import torch
 import time
 import pyap
 PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
@@ -14,6 +15,37 @@ array = List[str]
 
 # # Load in data functions
 
+# +
+def detect_file_type(filename):
+    """Detect the file type based on its extension."""
+    if (filename.endswith('.csv')) | (filename.endswith('.csv.gz')) | (filename.endswith('.zip')):
+        return 'csv'
+    elif filename.endswith('.xlsx'):
+        return 'xlsx'
+    elif filename.endswith('.parquet'):
+        return 'parquet'
+    else:
+        raise ValueError("Unsupported file type.")
+
+def read_file(filename):
+    """Read the file based on its detected type."""
+    file_type = detect_file_type(filename)
+    
+    if file_type == 'csv':
+        return pd.read_csv(filename, low_memory=False)
+    elif file_type == 'xlsx':
+        return pd.read_excel(filename)
+    elif file_type == 'parquet':
+        return pd.read_parquet(filename)
+
+# Test the functions
+#file_types = ["sample.csv", "sample.xlsx", "sample.parquet", "sample.txt"]
+#file_types_results = {ftype: detect_file_type(ftype) if 'txt' not in ftype else "Unsupported file type." for ftype in file_types}
+#file_types_results
+
+
+# -
+
 def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, Matcher):
         '''
         Load in user inputs from the Gradio interface. Convert all input types (single address, or csv input) into standardised data format that can be used downstream for the fuzzy matching.
@@ -22,7 +54,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         ### Load in column names
         in_colnames_list = in_colnames#.tolist()[0]
         #in_joincol = in_joincol.tolist()[0]
-        print(in_joincol)
+        #print(in_joincol)
         #print(in_joincol[0][0])
         if not in_joincol:
             Matcher.in_joincol_list = ['UPRN']
@@ -30,7 +62,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
      
     
         ### Load in reference data
-        Matcher.ref = pd.read_csv(in_ref.name, delimiter = ",", low_memory=False)#, encoding="utf-8")    
+        Matcher.ref = read_file(in_ref.name)#, encoding="utf-8")    
     
         ''' For the neural net model to work, the llpg columns have to be in the LPI format (e.g. with columns SaoText, SaoStartNumber etc. Here we check if we have that format. '''
     
@@ -70,26 +102,102 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
             Matcher.search_df = pd.read_csv(in_file.name, delimiter = ",", low_memory=False)#, encoding='cp1252')
             Matcher.search_df_key_field = "index" #"property ref" #"index"#"row_number"#"property_ref" #
             Matcher.search_address_cols = in_colnames_list #["addr1", "addr2", "addr3", "addr4"] #["full_address"]#
-            Matcher.search_postcode_col = [in_colnames_list[-1]]
+            # If search address has multiple columns then the postcode column is the last, otherwise it is the only column
+            #print(in_colnames_list)
+            #print(len(in_colnames_list))
+            
+            if len(in_colnames_list) > 1:
+                Matcher.search_postcode_col = [in_colnames_list[-1]]
+            else:
+                Matcher.search_df['full_address_postcode'] = Matcher.search_df[in_colnames_list[0]]
+                Matcher.search_postcode_col = ['full_address_postcode']
+                Matcher.search_address_cols.append('full_address_postcode')
         else: 
             Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col = prepare_search_address_string(in_text) 
+
+        print("Shape of ref before filtering is: ")
+        print(Matcher.ref.shape)
+    
+        print("Shape of search_df before filtering is: ")
+        print(Matcher.search_df.shape)
+
+        ### Filter addresses to those with length > 0
+        zero_length_search_df = Matcher.search_df.copy()[Matcher.search_address_cols]
+        zero_length_search_df = zero_length_search_df.fillna('')
+        Matcher.search_df["address_cols_joined"] = zero_length_search_df.astype(str).sum(axis=1).str.strip()
+
+        length_more_than_0 = Matcher.search_df["address_cols_joined"].str.len() > 0
+    
+ 
+        ### Filter addresses to match to postcode areas present in both search_df and ref_df only (postcode without the last three characters)
+        if Matcher.filter_to_lambeth_pcodes == True:
+            Matcher.search_df["postcode_search_area"] = Matcher.search_df[Matcher.search_postcode_col[0]].str.strip().str.upper().str.replace(" ", "").str[:-3]
+            Matcher.ref["postcode_search_area"] = Matcher.ref["Postcode"].str.strip().str.upper().str.replace(" ", "").str[:-3]
+               
+            unique_ref_pcode_area = (Matcher.ref["postcode_search_area"]).unique()
+            postcode_found_in_search = Matcher.search_df["postcode_search_area"].isin(unique_ref_pcode_area)
+
+            Matcher.search_df["Excluded from search"] = "Included in search"
+            Matcher.search_df.loc[~(postcode_found_in_search), "Excluded from search"] = "Postcode area not found"
+            Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
+            Matcher.pre_filter_search_df = Matcher.search_df.copy().reset_index()
+            Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("address_cols_joined", axis = 1)
+
+            Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0)]
+            Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0)]
+
             
-        Matcher.search_df_not_matched = Matcher.search_df
+            # Exclude records that have already been matched separately, i.e. if 'Matched with ref record' column exists, and has trues in it
+            if "Matched with ref record" in Matcher.search_df.columns:
+                previously_matched = Matcher.pre_filter_search_df["Matched with ref record"] == True 
+                Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
+                
+                Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0) | (previously_matched)]
+                Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0) & ~(previously_matched)]
+           
+            else:
+                Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0)]
+                Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0)]
+                    
+   
+            unique_search_pcode_area = (Matcher.search_df["postcode_search_area"]).unique()
+            postcode_found_in_ref = Matcher.ref["postcode_search_area"].isin(unique_search_pcode_area)
+            Matcher.ref = Matcher.ref[(postcode_found_in_ref)]
+
+            
+            
+            Matcher.search_df = Matcher.search_df.drop("postcode_search_area", axis = 1)
+            Matcher.ref = Matcher.ref.drop("postcode_search_area", axis = 1)
+            Matcher.excluded_df = Matcher.excluded_df.drop("postcode_search_area", axis = 1)
+        else:
+            Matcher.pre_filter_search_df = Matcher.search_df.copy()
+            Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
+            
+            Matcher.excluded_df = Matcher.search_df[~(length_more_than_0)]
+            Matcher.search_df = Matcher.search_df[length_more_than_0]
+            
         
-        return Matcher#Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col,\
-               #Matcher.in_colnames_list, Matcher.in_joincol_list, Matcher.ref, Matcher.ref_address_cols, Matcher.standard_llpg_format
+
+        Matcher.search_df = Matcher.search_df.drop("address_cols_joined", axis = 1)
+        Matcher.excluded_df = Matcher.excluded_df.drop("address_cols_joined", axis = 1)
+
+        #Matcher.pre_filter_search_df.to_csv("pre_filter_search_df.csv")
+        #Matcher.excluded_df.to_csv("excluded_entries.csv")
+        #Matcher.search_df.to_csv("initial_search_df_pre_search.csv")
+
+        Matcher.search_df_not_matched = Matcher.search_df
+
+        print("Shape of ref after filtering is: ")
+        print(Matcher.ref.shape)
+    
+        print("Shape of search_df after filtering is: ")
+        print(Matcher.search_df.shape)
+        
+        
+        return Matcher
 
 
 # # DF preparation functions
-
-# def filter_not_matched(match_results_output_not_std, search_df, search_df_key_field):
-#     match_results_output_not_std_not_matched = match_results_output_not_std[match_results_output_not_std["full_match"] != True]
-#
-#     not_matched = search_df.reset_index()[search_df_key_field].astype(str).isin(match_results_output_not_std_not_matched[search_df_key_field])
-#
-#     search_df_not_matched = search_df[list(not_matched)]
-#     
-#     return search_df_not_matched
 
 def filter_not_matched(
     matched_results: pd.DataFrame, 
@@ -114,28 +222,14 @@ def filter_not_matched(
     matched_results_success = matched_results[matched_results["full_match"]==True]
 
     # Filter search_df
-    matched = search_df.reset_index()[key_col].astype(str).isin(matched_results_success[key_col])
+    matched = search_df.reset_index()[key_col].astype(str).isin(matched_results_success[key_col]) # 
+
+    #matched_results_success.to_csv("matched_results_success.csv")
+    #matched.to_csv("matched.csv")
+    #search_df.to_csv("search_df_at_match_removal.csv")
     
-    return search_df[~matched]
+    return search_df.iloc[np.where(~matched)[0]] # search_df[~matched] 
 
-
-# def prepare_search_address_string(search_df):
-#     
-#         search_df_out = pd.DataFrame(data={"full_address":[search_df]})
-#         
-#         search_df_out["postcode"] = extract_postcode(search_df_out, "full_address").dropna(axis=1)[0]
-#         
-#         search_df_out["full_address"] = remove_postcode(search_df_out, "full_address")
-#                
-#         # Set key field for joining back after the search is done to be index
-#         search_df_key_field = "index"
-#         
-#         search_df_out = search_df_out.reset_index()
-#         
-#         search_address_cols = ["full_address"]
-#         search_postcode_col = ["postcode"]
-#         
-#         return search_df_out, search_df_key_field, search_address_cols, search_postcode_col
 
 def prepare_search_address_string(
     search_str: str
@@ -174,42 +268,6 @@ def prepare_search_address_string(
     return search_df_out, key_field, address_cols, postcode_col
 
 
-# def prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field):
-#     
-#     #search_df.columns = search_df.columns.str.lower()
-#     
-#     # function for cleaning
-#     def clean_col(col):
-#         return col.astype(str).fillna("").str.replace("  "," ").str.replace("nan","").str.replace("  "," ").str.replace("  "," ").str.replace(","," ").str.strip()
-#
-#     # Apply clean function
-#     search_df[search_address_cols] = search_df[search_address_cols].apply(clean_col)          
-#     
-#     # Add in postcode
-#     search_address_cols_pcode = search_address_cols.copy()
-#     #search_address_cols_pcode.extend(search_postcode_col)
-#     
-#     full_address  = search_df[search_address_cols_pcode].apply(lambda row: ' '.join(row.values.astype(str)), axis=1) 
-#     
-#     search_df["full_address"] = full_address.str.replace("  "," ").str.replace("  "," ").str.strip()
-#     
-#     # Set key field for joining back after the search is done to be index
-#     if ((search_df_key_field == "index") & ~("index" in search_df.columns)):        
-#         search_df = search_df.reset_index()
-#         
-#     if isinstance(search_postcode_col, list):
-#         search_postcode_col = search_postcode_col[0]
-#         
-#     search_df = search_df.rename(columns={search_postcode_col:"postcode"})
-#     
-#     search_df[search_df_key_field] = search_df[search_df_key_field].astype(str)
-#     
-#     print(search_df.columns)
-#     
-#     
-#     
-#     return search_df, search_df_key_field
-
 # +
 def prepare_search_address(
     search_df: pd.DataFrame, 
@@ -240,6 +298,12 @@ def prepare_search_address(
     # Add postcode column 
     full_df = _add_postcode_column(full_addresses, postcode_col)
     
+    # Remove postcode from main address if there was only one column in the input
+    if postcode_col == "full_address_postcode":
+        # Remove postcode from address
+        address_series = remove_postcode(search_df, "full_address")
+        search_df["full_address"] == address_series
+    
     # Ensure index column
     final_df = _ensure_index(full_df, key_col)
     
@@ -266,8 +330,15 @@ def _add_postcode_column(df, postcodes):
    # Add postcode column
    if isinstance(postcodes, list):
         postcodes = postcodes[0]
-        
-   df = df.rename(columns={postcodes:"postcode"})
+    
+   if postcodes != "full_address_postcode":
+        df = df.rename(columns={postcodes:"postcode"})
+   else:
+        #print(df["full_address_postcode"])
+        #print(extract_postcode(df,"full_address_postcode"))
+        df["full_address_postcode"] = extract_postcode(df,"full_address_postcode")[0] # 
+        df = df.rename(columns={postcodes:"postcode"})
+        #print(df)
    
    return df
    
@@ -279,7 +350,6 @@ def _ensure_index(df, index_col):
    df[index_col] = df[index_col].astype(str)
 
    return df
-
 
 
 # -
@@ -355,7 +425,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     if 'Street' not in ref_df.columns:        
         ref_df['Street'] = ref_df["fulladdress"].apply(extract_street_name)
         
-    ref_df.to_csv("ref_df_test.csv", index = None)
+    #ref_df.to_csv("ref_df_after_prep.csv", index = None)
 
     return ref_df
 
@@ -363,7 +433,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
 # # Standardisation functions
 
 def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
-                               standardise = False, filter_to_lambeth_pcodes = False, match_task = "fuzzy"):
+                               standardise = False, filter_to_lambeth_pcodes = True, match_task = "fuzzy"):
     
     ## Search df - lower case addresses, replace spaces in postcode and 'AT' in addresses
 
@@ -375,13 +445,35 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     search_df["full_address_search"] = search_df["full_address_search"]
 
     search_df['postcode_search'] = search_df['postcode'].str.lower().str.strip().str.replace(" ", "",regex=False)
+
+    
+    #assert not ref_df['Postcode'].isna().any() , "nulls in ref_df subset post code"
+    # Remove nulls from ref postcode
+    ref_df = ref_df[ref_df['Postcode'].notna()]
+    
+    ref_df["full_address_search"] = ref_df["fulladdress"].str.lower().str.strip()
+    ref_df['postcode_search'] = ref_df['Postcode'].str.lower().str.strip().str.replace(" ", "", regex=False)
     
     # Block only on first 5 characters of postcode string - Doesn't give more matches and makes everything a bit slower
     # search_df['postcode_search'] = search_df['postcode_search'].str[:-1]
 
-    ### Filter addresses to match to lambeth only
+    ### Filter addresses to match to postcode areas present in both search_df and ref_df only (postcode without the last three characters)
+    #if filter_to_lambeth_pcodes == True:
+    #search_df["postcode_search_area"] = search_df["postcode_search"].str[:-3]
+    #ref_df["postcode_search_area"] = ref_df["postcode_search"].str[:-3]
 
-    '''if filter_to_lambeth_pcodes == True:
+    #print("Shape of search_df before filtering is: ")
+    #print(search_df.shape)
+
+    #postcode_found = search_df["postcode_search_area"].isin(ref_df["postcode_search_area"])
+        
+    #search_df = search_df[postcode_found]
+    #print("Shape of search_df after filtering is: ")
+    #print(search_df.shape)
+
+                                   
+    ''' OLD CODE, NOT USED
+    if filter_to_lambeth_pcodes == True:
         postcode_lookup_j = postcode_lookup.copy()[["pcd7","ladnm"]]
 
         postcode_lookup_j["pcd7"] = postcode_lookup_j["pcd7"].str.lower()
@@ -401,14 +493,6 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
 
     ## Standardise ref addresses
 
-    #assert not ref_df['Postcode'].isna().any() , "nulls in ref_df subset post code"
-    # Remove nulls from ref postcode
-    ref_df = ref_df[ref_df['Postcode'].notna()]
-    
-    ref_df["full_address_search"] = ref_df["fulladdress"].str.lower().str.strip()
-    ref_df['postcode_search'] = ref_df['Postcode'].str.lower().str.strip().str.replace(" ", "", regex=False)
-    
-
     # Block only on first 5 characters of postcode string - Doesn't give more matches and makes everything a bit slower
     # ref_df['postcode_search'] = ref_df['postcode_search'].str[:-1]
 
@@ -418,13 +502,17 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     if match_task == "fuzzy":
         ref_join, ref_df_stand_col = standardise_address(ref_df, "full_address_search", "ref_address_stand", standardise = standardise)
     else:
-        # For the neural network reference data there will be additional text columns that can be standardised
-        ref_join, ref_df_stand_col = standardise_address(ref_df, "full_address_search", "ref_address_stand", standardise = standardise)
-        ref_join_sao, ref_df_stand_col_sao = standardise_address(ref_df, "SaoText", "SaoText", standardise = standardise)
-        ref_join_pao, ref_df_stand_col_pao = standardise_address(ref_df, "PaoText", "PaoText", standardise = standardise)
-        
-        ref_join["SaoText"] = ref_df_stand_col_sao.str.upper()
-        ref_join["PaoText"] = ref_df_stand_col_pao.str.upper()
+        # For the neural network reference data there will be additional text columns that can be standardised.
+        # I FOUND THAT THE STANDARDISATION PROCESS DID NOT HELP THE MODEL AT ALL, IN FACT IT REDUCED MATCHES AS STANDARDISING INDIVIDUAL REF COLUMNS GIVES YOU DIFFERENT RESULTS
+        # FROM STANDARDISING THE WHOLE ADDRESS, THEN BREAKING IT DOWN. SO DON'T STANDARDISE. THE MODEL WILL JUST STANDARDISE THE INPUT ADDRESSES ONLY
+        ref_join, ref_df_stand_col = standardise_address(ref_df, "full_address_search", "ref_address_stand", standardise = False)
+        #ref_join_sao, ref_df_stand_col_sao = standardise_address(ref_df, "SaoText", "SaoText", standardise = standardise)
+        #ref_join_pao, ref_df_stand_col_pao = standardise_address(ref_df, "PaoText", "PaoText", standardise = standardise)
+        #ref_join_town, ref_df_stand_col_town = standardise_address(ref_df, "PostTown", "PostTown", standardise = standardise, out_london = False)
+                
+        #ref_join["SaoText"] = ref_df_stand_col_sao.str.upper()
+        #ref_join["PaoText"] = ref_df_stand_col_pao.str.upper()
+        #ref_join["PostTown"] = ref_df_stand_col_town.str.upper()
     
     ### Create lookup lists
     search_df_match_list = search_df_join.copy().set_index('postcode_search')['search_address_stand'].str.lower().str.strip()
@@ -538,14 +626,6 @@ def remove_flat_one_number_address (df:PandasDataFrame, col1:PandasSeries) -> Pa
     
     return df['new_col']
 
-
-# import pandas as pd
-#
-# example = pd.read_csv("address_parse_example.csv")
-#
-# out_df = remove_flat_one_number_address(example, "address")
-#
-# out_df
 
 def extract_letter_one_number_address (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
@@ -1115,15 +1195,18 @@ def create_match_summary(match_results_output, df_name):
         match_rate = str(round((full_match_count / dataset_length) * 100,1))
         #match_rate
 
-        match_fail_rate = str(round((match_fail_count / dataset_length) * 100,1))
+        match_fail_count_without_excluded = match_fail_count - records_not_attempted
+        #match_fail_count
+
+        match_fail_rate = str(round(((match_fail_count_without_excluded) / dataset_length) * 100,1))
         #match_fail_rate
 
-        not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,1))
+        not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,2))
         #not_attempted_rate
 
-        summary = ("For the " + df_name + " dataset, the fuzzy matching algorithm successfully matched " + full_match_count.astype(str) +\
-                   " records, which is " + match_rate +\
-           "% of the dataset. The algorithm did not attempt to match " + not_attempted_rate +  "% of the dataset. This leaves " + match_fail_count.astype(str) + " records left to match.")
+        summary = ("For the " + df_name + " dataset (" + str(dataset_length) + " records), the fuzzy matching algorithm successfully matched " + str(full_match_count) +\
+                   " records (" + match_rate + "%). The algorithm was not able to match " + str(records_not_attempted) +\
+                   " records (" + not_attempted_rate +  "%). This leaves " + str(match_fail_count_without_excluded) + " records left to match.")
         
         return summary
 
@@ -1203,7 +1286,14 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
                                                           Matcher.fuzzy_method,
                                                           Matcher.score_cut_off,
                                                           Matcher.match_results_output.copy(), 
-                                                          Matcher.filter_to_lambeth_pcodes)
+                                                          Matcher.filter_to_lambeth_pcodes,
+                                                          Matcher.model_type, 
+                                                          Matcher.word_to_index, 
+                                                          Matcher.cat_to_idx, 
+                                                          Matcher.device,
+                                                          Matcher.vocab,
+                                                          Matcher.labels_list)
+            
             
             Matcher.match_results_output = match_results_output
             Matcher.predict_df_nnet = predict_df_nnet
@@ -1228,15 +1318,32 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
 def combine_two_matches(OrigMatchClass, NewMatchClass, df_name):
         from datetime import datetime
         today_rev = datetime.now().strftime("%Y%m%d")
+
+        #OrigMatchClass.pre_filter_search_df.to_csv("pre_filter_search_df_at_match_time.csv")
+        #NewMatchClass.results_on_orig_df.to_csv("NewMatchClass_results_on_orig_df_at_match_time.csv")
     
         NewMatchClass.match_results_output = combine_std_df_remove_dups(OrigMatchClass.match_results_output, NewMatchClass.match_results_output, orig_addr_col = NewMatchClass.search_df_key_field)    
-        NewMatchClass.results_on_orig_df = combine_std_df_remove_dups(OrigMatchClass.results_on_orig_df, NewMatchClass.results_on_orig_df, orig_addr_col = NewMatchClass.search_df_key_field, match_col = 'Matched with ref record')
+        NewMatchClass.results_on_orig_df = combine_std_df_remove_dups(OrigMatchClass.pre_filter_search_df, NewMatchClass.results_on_orig_df, orig_addr_col = NewMatchClass.search_df_key_field, match_col = 'Matched with ref record') #OrigMatchClass.results_on_orig_df
+        NewMatchClass.pre_filter_search_df = NewMatchClass.results_on_orig_df
+        
+        # Identify records where the match score was 0
+        match_results_output_match_score_is_0 = NewMatchClass.match_results_output[NewMatchClass.match_results_output['fuzzy_score']==0.0][["index", "fuzzy_score"]]
+        match_results_output_match_score_is_0["index"] = match_results_output_match_score_is_0["index"].astype(int)
+        #NewMatchClass.results_on_orig_df["index"] = NewMatchClass.results_on_orig_df["index"].astype(str)
+        NewMatchClass.results_on_orig_df = NewMatchClass.results_on_orig_df.merge(match_results_output_match_score_is_0, on = "index", how = "left")
+    
+        NewMatchClass.results_on_orig_df.loc[NewMatchClass.results_on_orig_df["fuzzy_score"] == 0.0, "Excluded from search"] = "Match score is 0"
+        NewMatchClass.results_on_orig_df = NewMatchClass.results_on_orig_df.drop("fuzzy_score", axis = 1)
+
     
         NewMatchClass.output_summary = create_match_summary(NewMatchClass.match_results_output, df_name = df_name)
         print(NewMatchClass.output_summary)
     
 
         NewMatchClass.search_df_not_matched = filter_not_matched(NewMatchClass.match_results_output, NewMatchClass.search_df, NewMatchClass.search_df_key_field)
+
+        ### Rejoin the excluded matches onto the output file
+        NewMatchClass.results_on_orig_df = pd.concat([NewMatchClass.results_on_orig_df, NewMatchClass.excluded_df])
     
         NewMatchClass.match_outputs_name = "match_results_output_std_" + NewMatchClass.file_name + "_" + today_rev + ".csv"
         NewMatchClass.results_orig_df_name = "results_on_orig_df_std_" + NewMatchClass.file_name + "_" + today_rev + ".csv"
@@ -1250,50 +1357,6 @@ def combine_two_matches(OrigMatchClass, NewMatchClass, df_name):
 # # Fuzzy match functions
 
 # ## Fuzzy match algorithm
-
-def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_join_col):
-    
-    match_results_output_success = match_results_output[match_results_output["full_match"]==True]
-
-    #len(search_df)
-    
-    ref_join_cols = ["reference_orig_address","full_match", search_df_key_field]
-    ref_join_cols.extend(new_join_col)
-    
-    # If you're joining to the original df on index you will need to recreate the index again
-    
-
-    
-    if (search_df_key_field == "index"):
-        match_results_output_success[search_df_key_field] = match_results_output_success[search_df_key_field].astype(int)
-        search_df_j = search_df.drop("index", axis=1, errors='ignore').merge(match_results_output_success[ref_join_cols], left_index=True, right_on = search_df_key_field, how = "left")
-    
-    
-    else:
-        search_df_j = search_df.merge(match_results_output_success[ref_join_cols],how = "left", on = search_df_key_field)
-
-    
-    # Drop columns that aren't useful
-    search_df_j = search_df_j.drop(["full_address_search","postcode_search", "full_address_1", "full_address_2"],\
-                               axis=1, errors='ignore')
-
-    # Replace blanks with NA, fix UPRNs
-
-    search_df_j = search_df_j.replace(r'^\s*$', np.nan, regex=True)
-
-    search_df_j[new_join_col] = search_df_j[new_join_col].astype(str).replace(".0","", regex=False).replace("nan","", regex=False)
-    
-    # Replace cells with only 'nan' with blank
-    search_df_j = search_df_j.replace(r'^nan$', "", regex=True)
-
-    search_df_j = search_df_j.rename(columns={"reference_orig_address":"ref matched address",\
-                                     "full_address":"Combined address",\
-                                      "full_match":"Matched with ref record",\
-                                        'uprn':'UPRN'                                                                             
-                                     }, errors='ignore')
-    
-    return search_df_j
-
 
 def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:PandasSeries,
                                        matched_index_df:PandasDataFrame,
@@ -1397,8 +1460,8 @@ def _create_frame_multiple(matched_results:MatchedResults,
 
 def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
                      search_df_key_field, search_address_cols, search_postcode_col,\
-                     fuzzy_match_limit, fuzzy_scorer_used, fuzzy_search_addr_limit = 20,
-                    filter_to_lambeth_pcodes=True, new_join_col=["UPRN"]):
+                     fuzzy_match_limit, fuzzy_scorer_used, fuzzy_search_addr_limit = 100,
+                    filter_to_lambeth_pcodes=False, new_join_col=["UPRN"]):
 
     
     # Break if search item has length 0
@@ -1423,18 +1486,19 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     # Standardise addresses if required
 
     search_df_prep_join, ref_join, search_df_prep_match_list, ref_df_match_list, search_df_stand_col, ref_df_stand_col =\
-                                                standardise_wrapper_func(search_df_prep.copy(), ref_df, standardise = standardise)
+                                                standardise_wrapper_func(search_df_prep.copy(), ref_df, standardise = standardise, filter_to_lambeth_pcodes=filter_to_lambeth_pcodes,
+                                                                        match_task="fuzzy")
 
     
     # RUN WITH POSTCODE AS A BLOCKER #
     # Fuzzy match against reference addresses
     
-    # Remove rows where street is not in ref df
-    #index_check = ref_df_match_list.index.isin(search_df_prep_match_list.index)
-    #ref_df_match_list = ref_df_match_list[index_check == True]
+    # Remove rows where postcode is not in ref df
+    index_check = ref_df_match_list.index.isin(search_df_prep_match_list.index)
+    ref_df_match_list = ref_df_match_list[index_check == True]
     
-    search_df_prep_match_list.to_csv("search_df_prep_match_list.csv")
-    ref_df_match_list.to_csv("ref_df_match_list.csv")
+    #search_df_prep_match_list.to_csv("search_df_prep_match_list.csv")
+    #ref_df_match_list.to_csv("ref_df_match_list.csv")
 
     ''' matched is the list for which every single row is searched for in the reference list (the ref).'''
     
@@ -1478,17 +1542,11 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     
     # RUN WITH STREET AS A BLOCKER #
     
-    #print(ref_df.columns)
-
-    
     ### Redo with street as blocker
     search_df_prep_join_street = search_df_not_matched.copy() #search_df_prep_join.copy()
     search_df_prep_join_street['search_address_stand_w_pcode'] = search_df_prep_join_street['search_address_stand'] + " " + search_df_prep_join_street['postcode_search']
     
-    search_df_prep_join_street['street']= search_df_prep_join_street['full_address_search'].apply(extract_street_name)
-    
-    #print(search_df_prep_join_street['street'])
-        
+    search_df_prep_join_street['street']= search_df_prep_join_street['full_address_search'].apply(extract_street_name)       
     ref_join['ref_address_stand_w_pcode'] = ref_join['ref_address_stand'] + " " + ref_join['postcode_search']
         
         
@@ -1731,38 +1789,8 @@ def refine_export_results (results_df:PandasDataFrame,
 import recordlinkage
 import tensorflow as tf
 
-# ## Neural net label list
 
-labels_list_lon = [
-    'SaoText',  # 1
-    'SaoStartNumber',  # 2
-    'SaoStartSuffix',  # 3
-    'SaoEndNumber',  # 4
-    'SaoEndSuffix',  # 5
-    'PaoText',  # 6
-    'PaoStartNumber',  # 7
-    'PaoStartSuffix',  # 8
-    'PaoEndNumber',  # 9
-    'PaoEndSuffix',  # 10
-    'Street',  # 11
-    'PostTown',  # 12
-    'AdministrativeArea', #13
-    'Postcode'  # 14
-]
-
-labels_list = labels_list_lon
-
-# +
-# Number of labels in total (+1 for the blank category)
-n_labels = len(labels_list) + 1
-
-# Allowable characters for the encoded representation
-vocab = list(string.digits + string.ascii_lowercase + string.punctuation + string.whitespace)
-
-
-# -
-
-def vocab_lookup(characters: str) -> (int, np.ndarray):
+def vocab_lookup(characters: str, vocab) -> (int, np.ndarray):
     """
     Taken from the function from the addressnet package by Jason Rigby
     
@@ -1782,7 +1810,7 @@ def vocab_lookup(characters: str) -> (int, np.ndarray):
 
 # ## Neural net predictor functions
 
-def text_to_model_input_local(in_text, model_type = "estimator"):
+def text_to_model_input_local(in_text, vocab, model_type = "estimator"):
     addresses_out = []
     model_input_out = []
     encoded_text = []
@@ -1800,7 +1828,7 @@ def text_to_model_input_local(in_text, model_type = "estimator"):
 
     for x in range(0, len(in_text)):
         
-        out = vocab_lookup(in_text[x])
+        out = vocab_lookup(in_text[x], vocab)
         addresses_out.append(out)
         
         #print(out)
@@ -1837,7 +1865,7 @@ def reformat_predictions_local(predict_out):
     return predictions_list_reformat
 
 
-def predict_serve_conv_local(in_text:List[str], predictions) -> List[Dict[str, str]]:
+def predict_serve_conv_local(in_text:List[str], labels_list, predictions) -> List[Dict[str, str]]:
  
     class_names = [l.replace("_code", "") for l in labels_list]
     class_names = [l.replace("_abbreviation", "") for l in class_names]
@@ -1886,13 +1914,15 @@ def prep_predict_export(prediction_outputs, in_text):
 # +
 ### Predict function for imported .pb files
     
-def full_predict_func(list_to_predict, model):
+def full_predict_func(list_to_predict, model, vocab, labels_list):
     
     if hasattr(model, "summary"): # Indicates this is a keras model rather than an estimator
         model_type = "keras"
     else: model_type = "estimator"
     
-    addresses_out, model_input = text_to_model_input_local(list_to_predict, model_type) 
+    list_to_predict = [x.upper() for x in list_to_predict]
+    
+    addresses_out, model_input = text_to_model_input_local(list_to_predict, vocab, model_type) 
 
     if hasattr(model, "summary"):
         probs = model.predict(model_input, use_multiprocessing=True)
@@ -1910,7 +1940,7 @@ def full_predict_func(list_to_predict, model):
 
     #### Final output as list or dataframe
 
-    output = predict_serve_conv_local(list(list_to_predict), predictions_list_reformat)
+    output = predict_serve_conv_local(list(list_to_predict), labels_list, predictions_list_reformat)
 
     list_out, predict_df = prep_predict_export(output, list_to_predict)
     
@@ -1918,6 +1948,88 @@ def full_predict_func(list_to_predict, model):
 
 
 # -
+
+def predict_torch(model, model_type, input_text, word_to_index, device):
+    #print(device)
+    
+    # Convert input_text to tensor of character indices
+    indexed_texts = [[word_to_index.get(char, word_to_index['<UNK>']) for char in text] for text in input_text]
+    
+    # Calculate max_len based on indexed_texts
+    max_len = max(len(text) for text in indexed_texts)
+    
+    # Pad sequences and convert to tensor
+    padded_texts = torch.tensor([text + [word_to_index['<pad>']] * (max_len - len(text)) for text in indexed_texts])
+    
+    with torch.no_grad():
+        texts = padded_texts.to(device)
+        
+        if (model_type == "lstm") | (model_type == "gru"):
+            text_lengths = texts.ne(word_to_index['<pad>']).sum(dim=1)
+            predictions = model(texts, text_lengths)
+        
+        if model_type == "transformer":
+            # Call model with texts and pad_idx
+            predictions = model(texts, word_to_index['<pad>'])
+        
+    # Convert predictions to most likely category indices
+    _, predicted_indices = predictions.max(2)
+    return predicted_indices
+
+
+def torch_predictions_to_dicts(input_text, predicted_indices, index_to_category):
+    results = []
+    for i, text in enumerate(input_text):
+        # Treat each character in the input text as a "token"
+        tokens = list(text)  # Convert string to a list of characters
+        
+        # Create a dictionary for the current text
+        curr_dict = {}
+        
+        # Iterate over the predicted categories and the tokens together
+        for category_index, token in zip(predicted_indices[i], tokens):
+            # Convert the category index to its name
+            category_name = index_to_category[category_index.item()]
+            
+            # Append the token to the category in the dictionary (or create the category if it doesn't exist)
+            if category_name in curr_dict:
+                curr_dict[category_name] += token  # No space needed between characters
+            else:
+                curr_dict[category_name] = token
+        
+        results.append(curr_dict)
+    
+    return results
+
+
+def torch_prep_predict_export(prediction_outputs, in_text):
+    
+    #out_list = list(prediction_outputs)
+    
+    df_out = pd.DataFrame(prediction_outputs).drop("IGNORE", axis = 1)
+    
+    #print(in_text)
+    #print(df_out)
+    
+    df_out["address"] = in_text
+    
+    return df_out
+
+
+def full_predict_torch(model,  model_type, input_text, word_to_index, cat_to_idx, device):
+    
+    input_text = [x.upper() for x in input_text]
+    
+    predicted_indices = predict_torch(model, model_type, input_text, word_to_index, device)
+    
+    index_to_category = {v: k for k, v in cat_to_idx.items()}
+
+    results_dict = torch_predictions_to_dicts(input_text, predicted_indices, index_to_category)
+    
+    df_out = torch_prep_predict_export(results_dict, input_text)
+       
+    return results_dict, df_out
+
 
 def post_predict_clean(predict_df, orig_search_df, ref_address_cols, search_df_key_field):
                        
@@ -1999,7 +2111,7 @@ def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_jo
     
     if (search_df_key_field == "index"):
         
-        match_results_output_success[search_df_key_field] = match_results_output_success[search_df_key_field].astype(int)
+        match_results_output_success[search_df_key_field] = match_results_output_success[search_df_key_field].astype(float).astype(int)
         
         search_df_j = search_df.drop("index", axis=1, errors='ignore').merge(match_results_output_success[ref_join_cols], left_index=True, right_on = search_df_key_field, how = "left")
     
@@ -2018,6 +2130,8 @@ def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_jo
     # Replace blanks with NA, fix UPRNs
 
     search_df_j = search_df_j.replace(r'^\s*$', np.nan, regex=True)
+
+    search_df_j.to_csv("search_df_j.csv")
 
     search_df_j[new_join_col] = search_df_j[new_join_col].astype(str).replace(".0","", regex=False).replace("nan","", regex=False)
     
@@ -2124,6 +2238,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     # Sort by score, highest first 
     scoresSBM_r = scoresSBM_r.reset_index()  
     scoresSBM_r = scoresSBM_r.sort_values(by=["level_0","score_perc"], ascending = False)
+
+    
     
 
     # Within each search, order descending by score and remove anything below the max
@@ -2144,6 +2260,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     scoresSBM_search_m_j = scoresSBM_search_m_j.merge(predict_df_search, left_on="level_0", right_index=True,how="left", suffixes=("", "_pred"))
 
     scoresSBM_search_m_j = scoresSBM_search_m_j.reindex(sorted(scoresSBM_search_m_j.columns), axis=1)
+
+                          
     
     ## Join on ref full address
 
@@ -2152,6 +2270,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     ### Label rows that are above threshold score, reorder df
 
     scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
+
+
     
     ### Reorder some columns
     
@@ -2205,6 +2325,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
                                                   ])
     
     scoresSBM_out = scoresSBM_search_m_j[final_cols]
+
+    #scoresSBM_out.to_csv("scoresSBM_out" + "_" + blocker_column[0] + "_" + str(standardise) + ".csv")
     
     ''' Create 'best' results df '''
 
@@ -2324,7 +2446,8 @@ def perform_full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
                        search_postcode_col, search_df_key_field, 
                       standardise, exported_model, matching_variables,
                        text_columns, weights, fuzzy_method, score_cut_off,
-                         match_results, filter_to_lambeth_pcodes, new_join_col=["UPRN"]):
+                         match_results, filter_to_lambeth_pcodes, 
+                          model_type, word_to_index, cat_to_idx, device, vocab, labels_list, new_join_col=["UPRN"]):
 
     # Break if search item has length 0
     if len(search_df) == 0: 
@@ -2353,8 +2476,13 @@ def perform_full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     print("Starting neural net prediction")
     
     tic = time.perf_counter()
-
-    list_out, predict_df = full_predict_func(predict_data, exported_model)
+    
+    if (model_type == "gru") | (model_type == "lstm"):
+        list_out, predict_df = full_predict_torch(model = exported_model, model_type = model_type, input_text = predict_data,
+                                                         word_to_index=word_to_index, cat_to_idx=cat_to_idx, device=device)
+        #predict_df.to_csv("predict_df_outputs.csv", index = None)
+    else:
+        list_out, predict_df = full_predict_func(predict_data, exported_model, vocab, labels_list)
 
     toc = time.perf_counter()
 

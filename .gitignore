@@ -1,4 +1,5 @@
 *.ipynb
 *checkpoint.py
 *.pyc
+*.csv
 nnet_model/*
