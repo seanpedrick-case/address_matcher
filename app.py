@@ -152,7 +152,7 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
 # +
 ''' Create the gradio interface '''
 
-block = gr.Blocks(theme = gr.themes.Base())
+block = gr.Blocks()#(theme = gr.themes.Base())
 
 with block as demo:
     gr.Markdown(
