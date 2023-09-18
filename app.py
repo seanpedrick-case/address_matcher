@@ -33,12 +33,6 @@ import gradio as gr
 import tensorflow as tf
 import recordlinkage
 
-# +
-# #!pip install tensorflow
-# #!pip install recordlinkage
-# #!pip install rapidfuzz
-# -
-
 # Base folder is where the code file is stored
 base_folder = Path(os.getcwd())
 input_folder = base_folder/"Input/"
@@ -61,11 +55,18 @@ from tools import fuzzy_funcs
 # importlib.reload(fuzzy_funcs)
 
 def put_columns_in_df(in_file):
-    df = fuzzy_funcs.read_file(in_file.name)
-    #print(df.columns)
-    #print(list(df.columns))
-    new_choices = list(df.columns)
-    return gr.Dropdown.update(choices=new_choices)
+    new_choices = []
+    concat_choices = []
+    
+    for file in in_file:
+        df = fuzzy_funcs.read_file(file.name)
+        #print(df.columns)
+        #print(list(df.columns))
+        new_choices = list(df.columns)
+
+        concat_choices.extend(new_choices)
+        concat_choices = list(set(concat_choices))
+    return gr.Dropdown.update(choices=new_choices), gr.Dropdown.update(choices=new_choices)
 
 
 def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, progress=gr.Progress(), InitMatch = InitMatch):  
@@ -166,7 +167,7 @@ with block as demo:
     """)
     
     with gr.Accordion("I have multiple addresses", open = True):
-        in_file = gr.File(label="Input addresses from file")
+        in_file = gr.File(label="Input addresses from file", file_count= "multiple")
         #in_colnames = gr.Dataframe(label="Input file address column names (put postcode on end)", type="numpy", row_count=(1,"fixed"), col_count = 1,
                               # headers=["Address column name 1"])#, "Address column name 2", "Address column name 3", "Address column name 4"])
         in_colnames = gr.Dropdown(choices=[], multiselect=True, label="Select columns that make up the address. Make sure postcode is at the end")
@@ -181,7 +182,7 @@ with block as demo:
     open 'Custom reference file format or join columns' below.
     """)
     
-    in_ref = gr.File(label="Input reference addresses from file")
+    in_ref = gr.File(label="Input reference addresses from file", file_count= "multiple")
     
     with gr.Accordion("Custom reference file format or join columns (i.e. not LLPG LPI format)", open = False):
         in_refcol = gr.Dropdown(choices=[], multiselect=True, label="Select columns that make up the reference address. Make sure postcode is at the end")
@@ -198,15 +199,13 @@ with block as demo:
         
     # Updates to components
         
-    in_file.change(fn=put_columns_in_df, inputs=[in_file], outputs=[in_colnames])
-    in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_refcol])
-    in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_joincol])
+    in_file.change(fn=put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_colnames])
+    in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])
+    #in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_joincol])
 
     match_btn.click(fn=fuzz_match_single, inputs=[in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol],
                     outputs=[output_summary, output_file], api_name="address")
 
 demo.queue(concurrency_count=1).launch(debug=True)
 # -
-
-
 

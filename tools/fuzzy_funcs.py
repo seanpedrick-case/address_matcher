@@ -1,3 +1,4 @@
+# +
 import pandas as pd
 import numpy as np
 from typing import TypeVar, Dict, List, Tuple
@@ -7,11 +8,15 @@ from rapidfuzz import fuzz
 import torch
 import time
 import pyap
+import re
+
 PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
 PandasSeries = TypeVar('pd.core.frame.Series')
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
+
+# -
 
 # # Load in data functions
 
@@ -46,6 +51,17 @@ def read_file(filename):
 
 # -
 
+def get_file_name(in_name):
+    # Corrected regex pattern
+    match = re.search(r'\\(?!.*\\)(.*)', in_name)
+    if match:
+        matched_result = match.group(1)
+    else:
+        matched_result = None
+    
+    return matched_result
+
+
 def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, Matcher):
         '''
         Load in user inputs from the Gradio interface. Convert all input types (single address, or csv input) into standardised data format that can be used downstream for the fuzzy matching.
@@ -59,10 +75,21 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         if not in_joincol:
             Matcher.in_joincol_list = ['UPRN']
         else:  Matcher.in_joincol_list = in_joincol # If user enters join columns then use these, otherwise assume UPRN
-     
-    
+
         ### Load in reference data
-        Matcher.ref = read_file(in_ref.name)#, encoding="utf-8")    
+        print(in_ref)
+        for ref_file in in_ref:
+            print(ref_file.name)
+            temp_ref_file = read_file(ref_file.name)#, encoding="utf-8")  
+
+            file_name_out = get_file_name(ref_file.name)
+            temp_ref_file["Reference file"] = file_name_out
+            
+            Matcher.ref = pd.concat([Matcher.ref, temp_ref_file])
+
+            
+            
+            
     
         ''' For the neural net model to work, the llpg columns have to be in the LPI format (e.g. with columns SaoText, SaoStartNumber etc. Here we check if we have that format. '''
     
@@ -96,24 +123,34 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
             Matcher.ref_address_cols = in_refcol#.tolist()[0]
             Matcher.ref = Matcher.ref.rename(columns={Matcher.ref_address_cols[-1]:"Postcode"})
             Matcher.ref_address_cols[-1] = "Postcode"
-        
-        ### Load in search data        
-        if in_text == '': 
-            Matcher.search_df = pd.read_csv(in_file.name, delimiter = ",", low_memory=False)#, encoding='cp1252')
-            Matcher.search_df_key_field = "index" #"property ref" #"index"#"row_number"#"property_ref" #
-            Matcher.search_address_cols = in_colnames_list #["addr1", "addr2", "addr3", "addr4"] #["full_address"]#
-            # If search address has multiple columns then the postcode column is the last, otherwise it is the only column
-            #print(in_colnames_list)
-            #print(len(in_colnames_list))
+
+        # Reset index for ref as multiple files may have been combined with identical indices
+        Matcher.ref = Matcher.ref.reset_index().drop("index", axis = 1)
             
-            if len(in_colnames_list) > 1:
-                Matcher.search_postcode_col = [in_colnames_list[-1]]
-            else:
-                Matcher.search_df['full_address_postcode'] = Matcher.search_df[in_colnames_list[0]]
-                Matcher.search_postcode_col = ['full_address_postcode']
-                Matcher.search_address_cols.append('full_address_postcode')
+        ### Load in search data ###
+        
+        if in_text == '': 
+                for match_file in in_file:
+                    match_temp_file = pd.read_csv(match_file.name, delimiter = ",", low_memory=False)#, encoding='cp1252')
+                    Matcher.search_df = pd.concat([Matcher.search_df, match_temp_file])
+                    Matcher.search_df_key_field = "index" #"property ref" #"index"#"row_number"#"property_ref" #
+                    Matcher.search_address_cols = in_colnames_list #["addr1", "addr2", "addr3", "addr4"] #["full_address"]#
+                    # If search address has multiple columns then the postcode column is the last, otherwise it is the only column
+                    #print(in_colnames_list)
+                    #print(len(in_colnames_list))
+                    
+                    
+                    if len(in_colnames_list) > 1:
+                        Matcher.search_postcode_col = [in_colnames_list[-1]]
+                    else:
+                        Matcher.search_df['full_address_postcode'] = Matcher.search_df[in_colnames_list[0]]
+                        Matcher.search_postcode_col = ['full_address_postcode']
+                        Matcher.search_address_cols.append('full_address_postcode')
         else: 
-            Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col = prepare_search_address_string(in_text) 
+                Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col = prepare_search_address_string(in_text) 
+
+        # Reset index for search_df as multiple files may have been combined with identical indices
+        Matcher.search_df = Matcher.search_df.reset_index().drop("index", axis = 1)
 
         print("Shape of ref before filtering is: ")
         print(Matcher.ref.shape)
@@ -131,8 +168,8 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
  
         ### Filter addresses to match to postcode areas present in both search_df and ref_df only (postcode without the last three characters)
         if Matcher.filter_to_lambeth_pcodes == True:
-            Matcher.search_df["postcode_search_area"] = Matcher.search_df[Matcher.search_postcode_col[0]].str.strip().str.upper().str.replace(" ", "").str[:-3]
-            Matcher.ref["postcode_search_area"] = Matcher.ref["Postcode"].str.strip().str.upper().str.replace(" ", "").str[:-3]
+            Matcher.search_df["postcode_search_area"] = Matcher.search_df[Matcher.search_postcode_col[0]].str.strip().str.upper().str.replace(" ", "").str[:-2]
+            Matcher.ref["postcode_search_area"] = Matcher.ref["Postcode"].str.strip().str.upper().str.replace(" ", "").str[:-2]
                
             unique_ref_pcode_area = (Matcher.ref["postcode_search_area"]).unique()
             postcode_found_in_search = Matcher.search_df["postcode_search_area"].isin(unique_ref_pcode_area)
@@ -367,6 +404,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     ref_address_cols_uprn = ref_address_cols.copy()
 
     ref_address_cols_uprn.extend(new_join_col)
+    ref_address_cols_uprn.extend(["Reference file"])
     
     ref_df = ref.copy()
 
@@ -379,7 +417,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
         
  
     #ref_df['PostTown'] = ''
-
+    
     ref_df = ref_df[ref_address_cols_uprn]
 
     ref_df = ref_df.fillna("")
@@ -428,7 +466,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     if 'Street' not in ref_df.columns:        
         ref_df['Street'] = ref_df["fulladdress"].apply(extract_street_name)
         
-    #ref_df.to_csv("ref_df_after_prep.csv", index = None)
+    ref_df.to_csv("ref_df_after_prep.csv", index = None)
 
     return ref_df
 
@@ -858,7 +896,7 @@ def remove_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     return address_series_no_pcode
 
 
-def merge_columns (df:PandasDataFrame, new_col_name:str, full_column:PandasSeries, partially_filled_column:PandasSeries) -> PandasSeries:
+def merge_columns(df:PandasDataFrame, new_col_name:str, full_column:PandasSeries, partially_filled_column:PandasSeries) -> PandasSeries:
     '''
     Merge two columns into a new column. The 'full column' is the column you want to replace values in
     'partially_filled_column' is the replacer column. 'new_col_name' is the name of the newly
@@ -1630,7 +1668,7 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         #print(len(match_results_output))
         
         # Join UPRN back onto the data from reference data
-        joined_ref_cols = ["fulladdress"]
+        joined_ref_cols = ["fulladdress", "Reference file"]
         joined_ref_cols.extend(new_join_col)
 
     
@@ -2109,7 +2147,7 @@ def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_jo
 
       # If you're joining to the original df on index you will need to recreate the index again
     
-    ref_join_cols = ["reference_orig_address","full_match", search_df_key_field]
+    ref_join_cols = ["reference_orig_address","full_match", "Reference file", search_df_key_field]
     ref_join_cols.extend(new_join_col)
     
     if (search_df_key_field == "index"):
