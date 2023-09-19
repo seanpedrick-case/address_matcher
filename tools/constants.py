@@ -309,11 +309,13 @@ class MatcherClass:
         self.ref_address_cols = []
         self.new_join_col = []
         self.in_joincol_list = []
+        self.existing_match_cols = []
         self.standard_llpg_format = []
 
         
         # Results attributes
         self.match_results = pd.DataFrame()
+        self.match_results_output = pd.DataFrame()
         self.predict_df_nnet = pd.DataFrame()
         
         # Other attributes generated during training
@@ -322,7 +324,7 @@ class MatcherClass:
         self.diag_best_match = []
         self.diag_best_match_matches = []
         self.diag_best_match_not_matched = []
-        self.match_results_output = []
+        
         self.results_on_orig_df = []
         self.summary = []
         self.search_address_cols = []
