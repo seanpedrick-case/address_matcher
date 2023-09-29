@@ -14,7 +14,7 @@ details here: https://stackoverflow.com/questions/31806695/when-to-use-which-fuz
 fuzzy_scorer_used = "token_set_ratio"
 
 # +
-fuzzy_match_limit = 45
+fuzzy_match_limit = 80
 
 fuzzy_search_addr_limit = 20
 
@@ -32,7 +32,6 @@ if standardise == False:
 dataset_name = "ctax" + std
     
 suffix_used = dataset_name + "_" + fuzzy_scorer_used
-file_name = "search"
 
 # + [markdown] jp-MarkdownHeadingCollapsed=true tags=[]
 # ## Neural net variables and models
@@ -215,6 +214,9 @@ fuzzy_method = "jarowinkler"
 ''' Required overall match score for all columns to count as a match '''
 
 score_cut_off = 0.987
+
+# I set a higher score cut off for nnet street blocking based on empirical data. Under this match value I was seeing errors. This value (.99238) is hard coded in fuzzy_funcs.py, score_based_match function
+score_cut_off_nnet_street = 0.99238
 #score_cut_off = 0.975
 
 # -
@@ -262,7 +264,7 @@ weights["Postcode"] = Postcode_weight
 class MatcherClass:
     def __init__(self, 
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
-                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name, model_type, labels_list):
+                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, model_type, labels_list):
         
         # Fuzzy/general attributes
         self.fuzzy_scorer_used = fuzzy_scorer_used
@@ -271,8 +273,7 @@ class MatcherClass:
         self.filter_to_lambeth_pcodes = filter_to_lambeth_pcodes
         self.standardise = standardise
         self.suffix_used = suffix_used
-        self.file_name = file_name
-        
+
         # Neural net attributes
         self.matching_variables = matching_variables
         self.model_dir_name = model_dir_name
@@ -298,6 +299,8 @@ class MatcherClass:
         self.vocab = vocab
         
         # Join data
+        self.file_name = ''
+        self.ref_name = ''
         self.search_df = pd.DataFrame()
         self.excluded_df = pd.DataFrame()
         self.pre_filter_search_df = pd.DataFrame()
@@ -336,5 +339,5 @@ class MatcherClass:
     
 InitMatch = MatcherClass(
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
-                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights, file_name, model_type, labels_list
+                matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights,  model_type, labels_list
                 )
