@@ -69,6 +69,8 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         '''
         Load in user inputs from the Gradio interface. Convert all input types (single address, or csv input) into standardised data format that can be used downstream for the fuzzy matching.
         '''
+        # Abort flag for if it's not even possible to attempt the first stage of the match for some reason
+        Matcher.abort_flag = False
 
         today_rev = datetime.now().strftime("%Y%m%d")
     
@@ -1388,15 +1390,23 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
                                                           Matcher.fuzzy_search_addr_limit,
                                                           Matcher.filter_to_lambeth_pcodes, 
                                                           Matcher.in_joincol_list)
+            if match_results_output.empty: 
+                print("Match results empty")
+                Matcher.abort_flag = True
+                return Matcher    
+        
+            else:
             
-            Matcher.compare_all_candidates = compare_all_candidates
-            Matcher.diag_shortlist = diag_shortlist
-            Matcher.diag_best_match = diag_best_match
-            Matcher.diag_best_match_matches = diag_best_match_matches
-            Matcher.diag_best_match_not_matched = diag_best_match_not_matched
+                Matcher.compare_all_candidates = compare_all_candidates
+                Matcher.diag_shortlist = diag_shortlist
+                Matcher.diag_best_match = diag_best_match
+                Matcher.diag_best_match_matches = diag_best_match_matches
+                Matcher.diag_best_match_not_matched = diag_best_match_not_matched
             
-            Matcher.match_results_output = match_results_output
-            #Matcher.match_results_output["match_method"] = df_name
+                Matcher.match_results_output = match_results_output
+                #Matcher.match_results_output["match_method"] = df_name
+
+            
             
             
             
@@ -1428,9 +1438,14 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
                                                           Matcher.vocab,
                                                           Matcher.labels_list)
             
+            if match_results_output.empty: 
+                print("Match results empty")
+                Matcher.abort_flag = True
+                return Matcher
+            else:
+                Matcher.match_results_output = match_results_output
+                Matcher.predict_df_nnet = predict_df_nnet
             
-            Matcher.match_results_output = match_results_output
-            Matcher.predict_df_nnet = predict_df_nnet
         
         
         Matcher.results_on_orig_df = results_on_orig_df
@@ -1630,6 +1645,11 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     # Remove rows where postcode is not in ref df
     index_check = ref_df_match_list.index.isin(search_df_prep_match_list.index)
     ref_df_match_list = ref_df_match_list[index_check == True]
+
+    if len(ref_df_match_list) == 0: 
+        print("Nothing relevant in reference data to match!")
+        return pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),\
+        pd.DataFrame(),pd.DataFrame(),"Nothing relevant in reference data to match!",search_address_cols
     
     #search_df_prep_match_list.to_csv("search_df_prep_match_list.csv")
     #ref_df_match_list.to_csv("ref_df_match_list.csv")
@@ -1659,9 +1679,11 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     match_results_output['match_method'] = "Fuzzy match - postcode"
     
     search_df_not_matched = filter_not_matched(match_results_output, search_df_prep_join, search_df_key_field)
-    
+
+                        
     # If nothing left to match, break
-    if sum(match_results_output['full_match']==False) == 0:
+    if (sum(match_results_output['full_match']==False) == 0) | (sum(match_results_output[match_results_output['full_match']==False]['fuzzy_score'])==0):
+        print("Trying to break")
         
         summary = create_match_summary(match_results_output, df_name)
         

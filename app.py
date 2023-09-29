@@ -102,14 +102,14 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         
         FuzzyNotStdMatch = fuzzy_funcs.run_fuzzy_match(Matcher = copy.copy(InitMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
         print(FuzzyNotStdMatch.output_summary)
-    
-        #FuzzyNotStdMatch.results_on_orig_df = fuzzy_funcs.combine_std_df_remove_dups(FuzzyNotStdMatch.pre_filter_search_df, FuzzyNotStdMatch.results_on_orig_df, orig_addr_col = FuzzyNotStdMatch.search_df_key_field, match_col = 'Matched with ref record')
-        #FuzzyNotStdMatch.pre_filter_search_df = FuzzyNotStdMatch.results_on_orig_df
-        #FuzzyNotStdMatch.search_df_not_matched = fuzzy_funcs.filter_not_matched(FuzzyNotStdMatch.match_results_output, FuzzyNotStdMatch.search_df, FuzzyNotStdMatch.search_df_key_field)
+
+        if FuzzyNotStdMatch.abort_flag == True:
+            print("Nothing to match!")
+            return "Nothing to match!", [InitMatch.results_orig_df_name, InitMatch.match_outputs_name]
 
         FuzzyNotStdMatch = fuzzy_funcs.combine_two_matches(InitMatch, FuzzyNotStdMatch, df_name)
         
-        if len(FuzzyNotStdMatch.search_df_not_matched) == 0: 
+        if (len(FuzzyNotStdMatch.search_df_not_matched) == 0) | (sum(FuzzyNotStdMatch.match_results_output[FuzzyNotStdMatch.match_results_output['full_match']==False]['fuzzy_score'])==0): 
             overall_toc = time.perf_counter()
             time_out = f"The fuzzy match script took {overall_toc - overall_tic:0.1f} seconds"
             FuzzyNotStdMatch.output_summary = FuzzyNotStdMatch.output_summary + " Neural net match not attempted. " + time_out
@@ -178,8 +178,8 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
     
     return summary_of_summaries, [FuzzyNNetStdMatch.results_orig_df_name, FuzzyNNetStdMatch.match_outputs_name]
 
-# import importlib
-# importlib.reload(fuzzy_funcs)
+import importlib
+importlib.reload(fuzzy_funcs)
 
 # +
 ''' Create the gradio interface '''

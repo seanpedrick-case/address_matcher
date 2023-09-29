@@ -336,6 +336,10 @@ class MatcherClass:
         
         self.match_outputs_name = []
         self.results_orig_df_name = []
+
+        # Abort flag if the matcher couldn't even get the results of the first match
+        self.abort_flag = False
+
     
 InitMatch = MatcherClass(
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
