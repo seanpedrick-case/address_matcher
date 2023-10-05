@@ -1,7 +1,7 @@
 # +
 import pandas as pd
 import numpy as np
-from typing import TypeVar, Dict, List, Tuple
+from typing import TypeVar, Dict, List, Tuple, Union
 import string
 from rapidfuzz import process
 from rapidfuzz import fuzz
@@ -451,7 +451,7 @@ def create_full_address(df):
     .str.strip()
     #.str.replace("  "," ")\
 
-    df.to_csv("ref_fulladdress_out.csv")
+    #df.to_csv("ref_fulladdress_out.csv")
     
     return df["full_address"]
 
@@ -691,18 +691,19 @@ def extract_street_name(address:str) -> str:
         return ""
 
 
-def remove_flat_one_number_address (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
 
     '''
     If there is only one number in the address, and there is no letter after the number,
     remove the word flat from the address
     '''
     
-    df['contains_letter_after_number'] = df[col1].str.lower().str.contains(r"\d+(?:[a-z]|[A-Z])(?!.*\d+)")
-    df['two_numbers_in_address'] =  df[col1].str.lower().str.contains(r"(?:\d+.*?)[^a-zA-Z0-9_].*?\d+")
-    df['contains_apartment'] = df[col1].str.lower().str.contains(r"\bapartment\b \w+|\bapartments\b \w+", "")
-    df['contains_flat'] = df[col1].str.lower().str.contains(r"\bflat\b \w+|\bflats\b \w+", "")
-    df['contains_room'] = df[col1].str.lower().str.contains(r"\broom\b \w+|\brooms\b \w+", "")
+    df['contains_letter_after_number'] = df[col1].str.lower().str.contains(r"\d+(?:[a-z]|[A-Z])(?!.*\d+)", regex = True)
+    df['contains_single_letter_before_number'] = df[col1].str.lower().str.contains(r'\b[A-Za-z]\b[^\d]* \d', regex = True)
+    df['two_numbers_in_address'] =  df[col1].str.lower().str.contains(r"(?:\d+.*?)[^a-zA-Z0-9_].*?\d+", regex = True)
+    df['contains_apartment'] = df[col1].str.lower().str.contains(r"\bapartment\b \w+|\bapartments\b \w+", "", regex = True)
+    df['contains_flat'] = df[col1].str.lower().str.contains(r"\bflat\b \w+|\bflats\b \w+", "", regex = True)
+    df['contains_room'] = df[col1].str.lower().str.contains(r"\broom\b \w+|\brooms\b \w+", "", regex = True)
       
     
     #df['selected_rows'] = (df['contains_letter_after_number'] == False) &\
@@ -710,19 +711,34 @@ def remove_flat_one_number_address (df:PandasDataFrame, col1:PandasSeries) -> Pa
     #                         (df['contains_flat'] == False) &\
     #                         (df['contains_apartment'] == False) &\
     #                         (df['contains_room'] == False)
+
+    # remove word flat/apartment/room from addresses that only have one number in the address, and don't have a letter after a number
     
     df['selected_rows'] = (df['contains_letter_after_number'] == False) &\
                           (df['two_numbers_in_address'] == False) &\
+                            (df['contains_single_letter_before_number'] == False) &\
                              ((df['contains_flat'] == True) |\
                              (df['contains_apartment'] == True) |\
                              (df['contains_room'] == True))
         
-    df['one_number_no_flat'] =  df[df['selected_rows'] == True][col1].str.replace(r"(\bapartment\b)|(\bapartments\b)", "", regex=True\
-                                  ).str.replace(r"(\bflat\b)|(\bflats\b)", "", regex=True).str.replace(r"(\broom\b)|(\brooms\b)", "", regex=True)
+    df['one_number_no_flat'] =  df[df['selected_rows'] == True][col1]
+    df['one_number_no_flat'] =  df['one_number_no_flat'].str.replace(r"(\bapartment\b)|(\bapartments\b)", "", regex=True).str.replace(r"(\bflat\b)|(\bflats\b)", "", regex=True).str.replace(r"(\broom\b)|(\brooms\b)", "", regex=True)
+
     
     merge_columns(df, "new_col", col1, 'one_number_no_flat')
 
     #print(df)
+    
+    return df['new_col']
+
+
+def add_flat_addresses_start_with_letter(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+    df['contains_single_letter_at_start_before_number'] = df[col1].str.lower().str.contains(r'^\b[A-Za-z]\b[^\d]* \d', regex = True)
+
+    df['selected_rows'] = (df['contains_single_letter_at_start_before_number'] == True)
+    df['flat_added_to_string_start'] =  "flat " + df[df['selected_rows'] == True][col1]
+    
+    merge_columns(df, "new_col", col1, 'flat_added_to_string_start')
     
     return df['new_col']
 
@@ -920,10 +936,12 @@ def extract_flat_no (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     # ^\d+([a-z]|[A-Z])
     '''  
     try:
-        flat_no = df[df[col1].str.lower().str.replace(r"^\bflats\b","flat", regex=True).str.contains(\
+        replaced_series = df[df[col1].str.lower().str.replace(r"^\bflats\b","flat", regex=True).str.contains(\
               r"^\d+([a-z]|[A-Z])(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
-             "no.","", regex=True).str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)|flat (\w+)|apartment (\w+)|(\d+.*?)[^a-zA-Z0-9_].*?\d+'\
-                                                                          ).rename(columns = {0:"prop_number", 1:"flat_number",2:"apart_number",3:"first_sec_number"})
+             "no.","", regex=True)
+        
+        flat_no = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)|flat (\w+)|apartment (\w+)|(\d+.*?)[^a-zA-Z0-9_].*?\d+|\b([A-Za-z])\b[^\d]* \d'\
+                                                                          ).rename(columns = {0:"prop_number", 1:"flat_number",2:"apart_number",3:"first_sec_number",4:"first_letter_flat_number"})
     except:
        
         flat_no = np.nan
@@ -955,6 +973,31 @@ def remove_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     return address_series_no_pcode
 
 
+def replace_mistaken_dates(df:PandasDataFrame, col:str) -> PandasSeries:
+    '''
+    Identify addresses that mistakenly have dates in them and replace these dates with number values
+    '''
+    # Regex pattern to identify the date-month format
+    pattern = r'(\d{2})-(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)'
+    
+    # Dictionary to map month abbreviations to numbers
+    month_map = {
+        'jan': '1', 'feb': '2', 'mar': '3', 'apr': '4', 'may': '5', 'jun': '6',
+        'jul': '7', 'aug': '8', 'sep': '9', 'oct': '10', 'nov': '11', 'dec': '12'
+    }
+    
+    # Custom replacement function
+    def replace_month(match):
+        day = match.group(1).lstrip('0')  # Get the day and remove leading zeros
+        month = month_map[match.group(2)]  # Convert month abbreviation to number
+        return f"{day}-{month}"
+    
+    # Apply the regex replacement
+    corrected_addresses = df[col].str.replace(pattern, replace_month, regex = True)
+
+    return corrected_addresses
+
+
 def merge_columns(df:PandasDataFrame, new_col_name:str, full_column:PandasSeries, partially_filled_column:PandasSeries) -> PandasSeries:
     '''
     Merge two columns into a new column. The 'full column' is the column you want to replace values in
@@ -970,6 +1013,22 @@ def merge_columns(df:PandasDataFrame, new_col_name:str, full_column:PandasSeries
     df.loc[~replacer_column_is_null, new_col_name] = df[~replacer_column_is_null][partially_filled_column]
     
     return df[new_col_name]
+
+
+def merge_series(full_series: pd.Series, partially_filled_series: pd.Series) -> pd.Series:
+    '''
+    Merge two series. The 'full_series' is the series you want to replace values in
+    'partially_filled_series' is the replacer series.
+    '''
+    replacer_series_is_null = partially_filled_series.isnull()
+
+    # Start with full_series values
+    merged_series = full_series.copy()
+
+    # Replace values in merged_series where partially_filled_series is not null
+    merged_series[~replacer_series_is_null] = partially_filled_series.dropna()
+
+    return merged_columns
 
 
 def clean_cols(col:str) -> str:
@@ -1045,6 +1104,9 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
         
         df_copy['add_no_pcode'] = df_copy['add_no_pcode'].str.lower()
 
+        # If there are dates at the start of the address, change this
+        df_copy['add_no_pcode'] = replace_mistaken_dates(df_copy, 'add_no_pcode')
+
         # Replace flat name variations with flat, abbreviations with full name of item (e.g. rd to road)
         df_copy['add_no_pcode'] = df_copy['add_no_pcode'].str.replace(r"\brd\b","road", regex=True).\
                                                 str.replace(r"\bst\b","street", regex=True).\
@@ -1098,8 +1160,9 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
 
         # Add 'flat' to the start of addresses that include ground/first/second etc. floor flat in the text
         df_copy['floor_replacement'] = replace_floor_flat(df_copy, 'add_no_pcode_house_comma_no')
+        df_copy['flat_added_to_start_addresses_begin_letter'] = add_flat_addresses_start_with_letter(df_copy, 'floor_replacement')
         
-        df_copy[out_col] = merge_columns(df_copy, out_col, 'add_no_pcode_house_comma_no', 'floor_replacement')
+        df_copy[out_col] = merge_columns(df_copy, out_col, 'add_no_pcode_house_comma_no', 'flat_added_to_start_addresses_begin_letter')
         
         #df_copy[out_col] = df_copy['add_no_pcode_house_comma_no'].fillna(df_copy['floor_replacement'])
 
@@ -1116,7 +1179,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     df['property_number'] = extract_prop_no(df_copy, out_col)
     
     #try:    
-    df[['prop_number','flat_number', 'apart_number','first_sec_number']] = extract_flat_no(df_copy, out_col)
+    df[['prop_number','flat_number', 'apart_number','first_sec_number', 'first_letter_flat_number']] = extract_flat_no(df_copy, out_col)
     #except:
     #   print("error in one of the number columns")
     #  df['prop_number'] = np.nan
@@ -1127,6 +1190,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'apart_number')
     df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'prop_number')
     df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_sec_number')
+    df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_letter_flat_number')
     
     #df_copy['flat_number'] = df['flat_number'].fillna(df['apart_number'])
     #df_copy['flat_number'] = df['flat_number'].fillna(df['prop_number'])
@@ -1137,178 +1201,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     return df, df[out_col]
 
 
-def refine_export_results (results_df:PandasDataFrame, 
-                           matched_df:PandasDataFrame, ref_list_df:PandasDataFrame,
-                           matched_col="search_df_prep_list_address", ref_list_col="ref_list_address",\
-                           final_matched_address_col="search_address_stand", final_ref_address_col="ref_address_stand",\
-                           orig_matched_address_col = "full_address", orig_ref_address_col = "fulladdress",\
-                           fuzzy_match_limit=75) -> PandasDataFrame:
-    '''
-    This function takes a result file from the fuzzy search, then refines the 'matched results' according
-    the score limit specified by the user and exports results list, matched and unmatched files.
-    '''
-    
-    results_join = results_df.reset_index()
-    
-    # Rename score column
-    results_join = results_join.rename(columns = {"score":"fuzzy_score"})
-    
-    # Create new df for export at end of function
-    compare_all_candidates = results_join.copy()
-        
-    # Remove empty addresses
-    results_join = results_join[results_join[matched_col] !=0 ]
-
-    ### Join property number and flat/room number onto results_df
-
-    reference_j = ref_list_df[[final_ref_address_col, "property_number","flat_number","room_number",\
-                               orig_ref_address_col,"Postcode"\
-                      ]].rename(columns={"property_number": "reference_property_number",\
-                                         "flat_number":"reference_flat_number",\
-                                         "room_number":"reference_room_number",\
-                                         orig_ref_address_col: "reference_orig_address",\
-                                        final_ref_address_col:'reference_list_address'                                         
-                                        })
-
-    results_join = results_join.merge(reference_j, how = "left", left_on = ref_list_col, right_on = "reference_list_address")
-
-    matched_j = matched_df[[final_matched_address_col,"property_number","flat_number","room_number",
-                            orig_matched_address_col, "postcode", \
-                             ]].rename(columns={"property_number": "matched_property_number",\
-                                                "flat_number":"matched_flat_number",\
-                                                "room_number":"matched_room_number",\
-                                               orig_matched_address_col:"search_orig_address",\
-                                               final_matched_address_col:'search_mod_address'
-                                               })
-
-    diag_j = results_join.merge(matched_j, how = "left", left_on = matched_col, right_on = "search_mod_address")
-        
-
-    ## Calculate highest fuzzy score from all candidates, keep all candidates with matching highest fuzzy score
-    results_max_fuzzy_score = diag_j.groupby(matched_col)["fuzzy_score"].max().reset_index().rename(columns={"fuzzy_score": "max_fuzzy_score"})
-    diag_shortlist = pd.merge(diag_j, results_max_fuzzy_score, how = "left", left_on = matched_col, right_on = matched_col)
-    diag_shortlist = diag_shortlist[diag_shortlist["fuzzy_score"] == diag_shortlist["max_fuzzy_score"]]
-    
-    diag_shortlist["fuzzy_score_match"] = diag_shortlist['fuzzy_score'] >= fuzzy_match_limit #eyeballed it
-    diag_shortlist = diag_shortlist.fillna("")
-
-
-    '''
-    Following creates a filter (mask) that matches together the derived room/property/flat numbers between
-    the two lists (best matches only).
-    '''
-   
-    mask_prop_only =\
-    (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"])
-    diag_shortlist["property_number_match"] = mask_prop_only
-    
-    mask_flat_only =\
-    (diag_shortlist['matched_flat_number'] == diag_shortlist['reference_flat_number'])
-    diag_shortlist["flat_number_match"] = mask_prop_only
-    
-    mask_room_only =\
-    (diag_shortlist['matched_room_number'] == diag_shortlist['reference_room_number'])
-    diag_shortlist["room_number_match"] = mask_prop_only
-    
-    mask = (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"]) & \
-    (diag_shortlist["reference_flat_number"] == diag_shortlist["matched_flat_number"]) #& \
-    
-    ### Diag shortlist
-    #print(diag_shortlist.columns)
-    ###
-    
-    
-    diag_shortlist['full_number_match'] = mask
-    
-    diag_shortlist["full_match"] = (diag_shortlist["fuzzy_score_match"] == True) &\
-                                    (diag_shortlist['full_number_match'] == True) # &\
-                                    #(diag_shortlist['postcode_close_match'] == True)
-    
-    diag_shortlist = diag_shortlist.sort_values(by = [matched_col, 'full_number_match'],ascending =False)
-    
-    diag_shortlist = diag_shortlist[['search_orig_address','reference_orig_address',
-            'full_match',
-            'full_number_match',
-            'flat_number_match',
-            'room_number_match',
-            'property_number_match',
-            'fuzzy_score_match',
-            'fuzzy_score', 
-            'matched_property_number', 'reference_property_number',  
-            'matched_flat_number', 'reference_flat_number', 
-            'matched_room_number', 'reference_room_number', 
-            'search_mod_address', 'reference_list_address','Postcode']] # , 'uprn'
-    
-    diag_shortlist = diag_shortlist.rename(columns = {"search_orig_address":"search_orig_address",
-                                                      "search_mod_address": "search_mod_address",
-                                                      "matched_flat_number":"search_flat_number",
-                                                      "matched_room_number":"search_room_number",
-                                                      "matched_property_number":"search_property_number",
-                                                     "reference_list_address":"reference_mod_address"})
- 
-
-    '''
-    If a matched address is duplicated, choose the version that has a number match, 
-    if there is no number match, then property match, then best fuzzy score, then show all options
-    '''  
-    diag_shortlist = diag_shortlist.sort_values(["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score"], ascending = False)
-    diag_best_match = diag_shortlist.drop_duplicates("search_mod_address")
-
-    ## Split into matched and non-matched addresses for diagnostic purposes
-    diag_shortlist_match = diag_best_match[["search_orig_address",'reference_orig_address', 
-                                                                   'full_match',
-                                          'full_number_match', 'room_number_match','flat_number_match',
-                                            'property_number_match','fuzzy_score_match','fuzzy_score',
-                                           "search_mod_address","reference_mod_address",'Postcode']] # ,'uprn']
-
-    diag_best_match_matched = diag_shortlist_match[diag_shortlist_match['full_match'] == True].sort_values(\
-                          ['fuzzy_score'], ascending = True)
-
-
-    diag_best_match_not_matched = diag_shortlist_match[diag_shortlist_match['full_match'] == False].sort_values(\
-                           ['fuzzy_score'], ascending = False)
-    
-    return compare_all_candidates, diag_shortlist, diag_best_match,\
-           diag_best_match_matched, diag_best_match_not_matched
-
-
 # # Overarching function
-
-# def create_match_summary(match_results_output, df_name):
-#     
-#         ''' Create a summary paragraph '''
-#         full_match_count = match_results_output['full_match'][match_results_output['full_match'] == True].count()
-#         #full_match_count
-#
-#         match_fail_count = match_results_output['full_match'][match_results_output['full_match'] == False].count()
-#         #match_fail_count
-#
-#         records_attempted = int(sum(match_results_output['fuzzy_score']!=0.0))
-#         #print(records_attempted)
-#
-#         dataset_length = len(match_results_output["full_match"])
-#         #dataset_length
-#
-#         records_not_attempted = int(dataset_length - records_attempted)
-#         #print(records_not_attempted)
-#
-#         match_rate = str(round((full_match_count / dataset_length) * 100,1))
-#         #match_rate
-#
-#         match_fail_count_without_excluded = match_fail_count - records_not_attempted
-#         #match_fail_count
-#
-#         match_fail_rate = str(round(((match_fail_count_without_excluded) / dataset_length) * 100,1))
-#         #match_fail_rate
-#
-#         not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,2))
-#         #not_attempted_rate
-#
-#         summary = ("For the " + df_name + " dataset (" + str(dataset_length) + " records), the fuzzy matching algorithm successfully matched " + str(full_match_count) +\
-#                    " records (" + match_rate + "%). The algorithm was not able to match " + str(records_not_attempted) +\
-#                    " records (" + not_attempted_rate +  "%). This leaves " + str(match_fail_count_without_excluded) + " records left to match.")
-#         
-#         return summary
 
 def create_match_summary(match_results_output, df_name):
     
@@ -1344,7 +1237,6 @@ def create_match_summary(match_results_output, df_name):
     return summary
 
 
-
 def combine_std_df_remove_dups(df_not_std, df_std, orig_addr_col = "search_orig_address", match_col = "full_match",
                               keep_only_duplicated = False):
 
@@ -1372,8 +1264,6 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
             compare_all_candidates,\
             diag_shortlist,\
             diag_best_match,\
-            diag_best_match_matches,\
-            diag_best_match_not_matched,\
             match_results_output,\
             results_on_orig_df,\
             summary,\
@@ -1400,9 +1290,6 @@ def run_fuzzy_match(Matcher, standardise = False, nnet = False, file_stub= "not_
                 Matcher.compare_all_candidates = compare_all_candidates
                 Matcher.diag_shortlist = diag_shortlist
                 Matcher.diag_best_match = diag_best_match
-                Matcher.diag_best_match_matches = diag_best_match_matches
-                Matcher.diag_best_match_not_matched = diag_best_match_not_matched
-            
                 Matcher.match_results_output = match_results_output
                 #Matcher.match_results_output["match_method"] = df_name
 
@@ -1524,7 +1411,22 @@ def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:Pan
     doesn't depend a lot on full matches of just partial text in the string. 
     See the seetgeek link above for more details.
     '''
+    def _create_frame_multiple(matched_results:MatchedResults,
+                 index_name:str, matched_name:str) -> PandasDataFrame:
+        """
+        Helper function to convert results matched into desired frame format, 
+        when multiple outputs are allowable in the string matching function
+        """
+            
+        output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index':matched_name})
+            
+        output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
+        output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
     
+        return output
+
+    scorer = getattr(fuzz, scorer_name)
+                     
     results= {}
     counter = 0
     for pc_match, add_match in match_col.items(): # .iteritems() is deprecated, so replaced
@@ -1532,28 +1434,14 @@ def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:Pan
         # Link the search to the relevant ID in the original df
         current_index = matched_index_df["search_address_stand"].iloc[counter]
            
-        # print(current_index)    
-                
-        
         try:
-            #print(match_col)
-            #print(pc_match)
-            
             lookup = reference_col.loc[pc_match]
-            
-            #print(lookup)
             
             if isinstance(lookup, str): # lookup can be a str-> 1 address per postcode
                 matched = process.extract(add_match,[lookup], scorer= getattr(fuzz, scorer_name), limit = search_limit)
             
-                #matched = matched + [pc_match]
-               # print(matched)
-            
             else: # 1+ addresses
                 matched = process.extract(add_match,lookup.values, scorer= getattr(fuzz, scorer_name), limit = search_limit)
-                #matched = matched + [pc_match]
-                
-               # print(matched)
             
             # If less matches than search limit found, add on NA entries to the search limit
             if len(matched) < search_limit:
@@ -1564,41 +1452,155 @@ def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:Pan
                                 
             results[current_index] = matched 
                         
-            ### TRY ADDING TO VARIABLE INSTEAD OF TO RESULTS[ADD_MATCH] DIRECTLY, THEN PASS TO RESULTS[ADD_MATCH]
             
         except KeyError: # no addresses for postcode, gives list of NA tuples           
             matched = []
             
             for x in range(1,search_limit+1):
                     matched.append(("NA",0))
-            
-            #matched = matched + [pc_match]
-            
+                        
             results[current_index] = matched
-            
-        
-        #results[add_match] = results[add_match] + [current_index]
-        #print(results[current_index])
         
         counter = counter + 1
     return _create_frame_multiple(matched_results = results,index_name=reference_output_name,
                          matched_name=matched_output_name)
 
 
-def _create_frame_multiple(matched_results:MatchedResults,
-                 index_name:str, matched_name:str) -> PandasDataFrame:
-    """
-    Helper function to convert results matched into desired frame format, 
-    when multiple outputs are allowable in the string matching function
-    """
-        
-    output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index':matched_name})
-        
-    output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
-    output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
+# def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:PandasSeries,
+#                                        matched_index_df:PandasDataFrame,
+#                               reference_output_name='ref_list_address',
+#                               matched_output_name='search_df_prep_list_address',
+#                               search_limit=10, scorer_name="token_set_ratio")-> MatchedResults:
+#     '''
+#     Matches by Series values; for example idx is post code and 
+#     values address. Search field is reduced by comparing same post codes address reference_col.
+#     
+#     Default scorer is fuzz.Wratio. This tries to weight the different algorithms
+#     to give the best score.
+#     Choice of ratio type seems to make a big difference. Looking at this link:
+#     https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
+#     and this one: 
+#     https://stackoverflow.com/questions/31806695/when-to-use-which-fuzz-function-to-compare-2-strings    
+#     
+#     'partial_token_sort_ratio' seems like a good option based on my tests in
+#     the housing to ref match file. It accounts for words in a different order,
+#     and scores strings badly if they are significantly different lengths. It also
+#     doesn't depend a lot on full matches of just partial text in the string. 
+#     See the seetgeek link above for more details.
+#     '''
+#     def _create_frame_multiple(matched_results:MatchedResults,
+#                  index_name:str, matched_name:str) -> PandasDataFrame:
+#         """
+#         Helper function to convert results matched into desired frame format, 
+#         when multiple outputs are allowable in the string matching function
+#         """
+#             
+#         output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index':matched_name})
+#             
+#         output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
+#         output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
+#     
+#         return output
+#     
+#     results= {}
+#     counter = 0
+#
+#     scorer = getattr(fuzz, scorer_name)
+#                                   
+#     for current_index, (pc_match, add_match) in enumerate(match_col.items()): # .iteritems() is deprecated, so replaced
+#         
+#         # Link the search to the relevant ID in the original df
+#         #current_index = matched_index_df["search_address_stand"].iloc[counter]
+#            
+#         try:
+#             lookup = reference_col.loc[pc_match]
+#             
+#             if isinstance(lookup, str): # lookup can be a str-> 1 address per postcode
+#                 matched = process.extract(add_match,[lookup], scorer= scorer, limit = search_limit)
+#             
+#             else: # 1+ addresses
+#                 matched = process.extract(add_match,lookup.values, scorer=scorer, limit = search_limit)
+#             
+#             # If less matches than search limit found, add on NA entries to the search limit
+#             # Pad results with "NA" if less than search_limit
+#             matched += [("NA", 0)] * (search_limit - len(matched))
+#                 
+#             # matched = matched + [pc_match]
+#                                 
+#             results[current_index] = matched 
+#                         
+#             
+#         except KeyError: # no addresses for postcode, gives list of NA tuples           
+#                         
+#             matched = [("NA", 0)] * search_limit
+#                         
+#             results[current_index] = matched
+#         
+#         #counter = counter + 1
+#     return _create_frame_multiple(matched_results = results,index_name=reference_output_name,
+#                          matched_name=matched_output_name)
 
-    return output
-
+# ##### Define the type for clearer annotations
+# MatchedResults = List[Tuple[str, int]]
+#
+# def string_match_by_post_code_multiple(
+#         match_col: pd.Series, 
+#         reference_col: pd.Series,
+#         matched_index_df: pd.DataFrame,
+#         reference_output_name: str = 'ref_list_address',
+#         matched_output_name: str = 'search_df_prep_list_address',
+#         search_limit: int = 10, 
+#         scorer_name: str = "token_set_ratio"
+#     ) -> pd.DataFrame:
+#
+#     '''
+#     Fuzzy matches two series.
+#     
+#     Default scorer is fuzz.Wratio. This tries to weight the different algorithms
+#     to give the best score.
+#     Choice of ratio type seems to make a big difference. Looking at this link:
+#     https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
+#     and this one: 
+#     https://stackoverflow.com/questions/31806695/when-to-use-which-fuzz-function-to-compare-2-strings
+#     '''
+#     
+#     def _create_frame_multiple(
+#             matched_results: Dict[str, MatchedResults],
+#             index_name: str, 
+#             matched_name: str
+#         ) -> pd.DataFrame:
+#         output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index': matched_name})
+#         output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
+#         output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
+#         return output
+#     
+#     # Get the scoring function once
+#     scorer = getattr(fuzz, scorer_name)
+#     
+#     results = {}
+#     for current_index, (pc_match, add_match) in enumerate(match_col.items()):
+#         
+#         # Check if the postal code exists in reference_col
+#         if pc_match in reference_col:
+#             lookup = reference_col.loc[pc_match]
+#             
+#             # Depending on the type of lookup, use appropriate method to match
+#             if isinstance(lookup, str):
+#                 matched = process.extract(add_match, [lookup], scorer=scorer, limit=search_limit)
+#             else:
+#                 matched = process.extract(add_match, lookup.values, scorer=scorer, limit=search_limit)
+#             
+#             # Pad results with "NA" if less than search_limit
+#             matched += [("NA", 0)] * (search_limit - len(matched))
+#         
+#         else:
+#             matched = [("NA", 0)] * search_limit
+#         
+#         results[matched_index_df["search_address_stand"].iloc[current_index]] = matched
+#
+#     return _create_frame_multiple(matched_results=results, index_name=reference_output_name, matched_name=matched_output_name)
+#
+# ##### The function has been optimized to some extent but needs testing with actual data.
 
 # ## Overarching fuzzy match function
 
@@ -1615,7 +1617,6 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
         pd.DataFrame(),pd.DataFrame(),"Nothing to match!",search_address_cols
 
         compare_all_candidates, diag_shortlist, diag_best_match,\
-    diag_best_match_matches, diag_best_match_not_matched,\
     match_results_output, results_on_orig_df, summary, search_address_cols
     
     
@@ -1648,7 +1649,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
 
     if len(ref_df_match_list) == 0: 
         print("Nothing relevant in reference data to match!")
-        return pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),\
+        return pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),\
         pd.DataFrame(),pd.DataFrame(),"Nothing relevant in reference data to match!",search_address_cols
     
     #search_df_prep_match_list.to_csv("search_df_prep_match_list.csv")
@@ -1672,9 +1673,8 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     # Create result dfs
     #ref_df.to_csv("ref_df_before_fuzzy_output.csv")
 
-    match_results_output, compare_all_candidates, diag_shortlist, diag_best_match,\
-        diag_best_match_matches, diag_best_match_not_matched = _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join,\
-                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise)
+    match_results_output, compare_all_candidates, diag_shortlist, diag_best_match = _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join,\
+                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Postcode")
     
     match_results_output['match_method'] = "Fuzzy match - postcode"
     
@@ -1692,7 +1692,6 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
         else: results_on_orig_df = match_results_output
         
         return compare_all_candidates, diag_shortlist, diag_best_match,\
-        diag_best_match_matches, diag_best_match_not_matched,\
         match_results_output, results_on_orig_df, summary, search_address_cols
     
     
@@ -1729,7 +1728,6 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
         else: results_on_orig_df = match_results_output
         
         return compare_all_candidates, diag_shortlist, diag_best_match,\
-        diag_best_match_matches, diag_best_match_not_matched,\
         match_results_output, results_on_orig_df, summary, search_address_cols
     
     print("Starting the fuzzy match with street as blocker")
@@ -1744,9 +1742,8 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
 
     print(f"Performed the fuzzy match in {toc - tic:0.1f} seconds")
     
-    match_results_output_st, compare_all_candidates_st, diag_shortlist_st, diag_best_match_st,\
-    diag_best_match_matches_st, diag_best_match_not_matched_st = _create_fuzzy_match_results_output(results_st, search_df_prep_join_street, ref_df, ref_join,\
-                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise)
+    match_results_output_st, compare_all_candidates_st, diag_shortlist_st, diag_best_match_st = _create_fuzzy_match_results_output(results_st, search_df_prep_join_street, ref_df, ref_join,\
+                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Street")
     
     match_results_output_st['match_method'] = "Fuzzy match - street"
 
@@ -1770,20 +1767,17 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
 
 
     
-    return compare_all_candidates, diag_shortlist, diag_best_match,\
-    diag_best_match_matches, diag_best_match_not_matched,\
-    match_results_output, results_on_orig_df, summary, search_address_cols
+    return compare_all_candidates, diag_shortlist, diag_best_match, match_results_output, results_on_orig_df, summary, search_address_cols
 
 
-def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join, fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise):
+def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join, fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col):
 
         ## Diagnostics
 
-        compare_all_candidates, diag_shortlist, diag_best_match,\
-        diag_best_match_matches, diag_best_match_not_matched =\
+        compare_all_candidates, diag_shortlist, diag_best_match =\
                                       refine_export_results(results_df=results,\
                                       matched_df = search_df_prep_join, ref_list_df = ref_join,
-                                      fuzzy_match_limit = fuzzy_match_limit)
+                                      fuzzy_match_limit = fuzzy_match_limit, blocker_col=blocker_col)
         
         ## Fuzzy search results
 
@@ -1815,18 +1809,17 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         
         #print(len(match_results_output))
         
-        return match_results_output, compare_all_candidates, diag_shortlist, diag_best_match,\
-        diag_best_match_matches, diag_best_match_not_matched
+        return match_results_output, compare_all_candidates, diag_shortlist, diag_best_match
 
 
 # ## Export diagnostics function
 
-def refine_export_results (results_df:PandasDataFrame, 
+def refine_export_results(results_df:PandasDataFrame, 
                            matched_df:PandasDataFrame, ref_list_df:PandasDataFrame,
                            matched_col="search_df_prep_list_address", ref_list_col="ref_list_address",\
                            final_matched_address_col="search_address_stand", final_ref_address_col="ref_address_stand",\
                            orig_matched_address_col = "full_address", orig_ref_address_col = "fulladdress",\
-                           fuzzy_match_limit=75) -> PandasDataFrame:
+                           fuzzy_match_limit=75, blocker_col="Postcode") -> PandasDataFrame:
     '''
     This function takes a result file from the fuzzy search, then refines the 'matched results' according
     the score limit specified by the user and exports results list, matched and unmatched files.
@@ -1870,32 +1863,41 @@ def refine_export_results (results_df:PandasDataFrame,
 
     ## Calculate highest fuzzy score from all candidates, keep all candidates with matching highest fuzzy score
     results_max_fuzzy_score = diag_j.groupby(matched_col)["fuzzy_score"].max().reset_index().rename(columns={"fuzzy_score": "max_fuzzy_score"})
+    
     diag_shortlist = pd.merge(diag_j, results_max_fuzzy_score, how = "left", left_on = matched_col, right_on = matched_col)
     diag_shortlist = diag_shortlist[diag_shortlist["fuzzy_score"] == diag_shortlist["max_fuzzy_score"]]
-    diag_shortlist["fuzzy_score_match"] = diag_shortlist['fuzzy_score'] >= fuzzy_match_limit #eyeballed it
-    diag_shortlist = diag_shortlist.fillna("")
 
+    # Fuzzy match limit for records with no numbers in it is 0.95 or the provided fuzzy_match_limit, whichever is higher
+    diag_shortlist["fuzzy_score_match"] = diag_shortlist['fuzzy_score'] >= fuzzy_match_limit
 
-    '''
-    Following creates a filter (mask) that matches together the derived room/property/flat numbers between
-    the two lists (best matches only).
-    '''
+    if fuzzy_match_limit > 0.95: no_number_fuzzy_match_limit = fuzzy_match_limit
+    else: no_number_fuzzy_match_limit = fuzzy_match_limit
+
+    ### Count number of numbers in search string
+    diag_shortlist["number_count_search_string"] =  diag_shortlist["search_mod_address"].str.count(r'\d')
+    diag_shortlist["no_numbers_in_search_string"] = diag_shortlist["number_count_search_string"] == 0
+
+    # Replace fuzzy_score_match values for addresses with no numbers in them
+    diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist['fuzzy_score'] >= no_number_fuzzy_match_limit), "fuzzy_score_match"] = True
+    diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist['fuzzy_score'] < no_number_fuzzy_match_limit), "fuzzy_score_match"] = False
+
+    # If blocking on street, don't match addresses with 0 numbers in. There are too many options and the matches are rarely good
+    if blocker_col == "Street":
+        diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True), "fuzzy_score_match"] = False
+                               
+    diag_shortlist = diag_shortlist.fillna("").drop(["number_count_search_string", "no_numbers_in_search_string"], axis = 1)
+
+    # Following considers full matches to be those that match on property number and flat number, and the postcode is relatively close.
+ 
    
-    mask_prop_only =\
-    (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"])
-    diag_shortlist["property_number_match"] = mask_prop_only
-    
-    mask_flat_only =\
-    (diag_shortlist['matched_flat_number'] == diag_shortlist['reference_flat_number'])
-    diag_shortlist["flat_number_match"] = mask_prop_only
-    
-    mask_room_only =\
-    (diag_shortlist['matched_room_number'] == diag_shortlist['reference_room_number'])
-    diag_shortlist["room_number_match"] = mask_prop_only
-    
-    mask = (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"]) & \
-    (diag_shortlist["reference_flat_number"] == diag_shortlist["matched_flat_number"]) #& \
-    diag_shortlist['full_number_match'] = mask
+    diag_shortlist["property_number_match"] = (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"])
+    diag_shortlist["flat_number_match"] = (diag_shortlist['matched_flat_number'] == diag_shortlist['reference_flat_number'])
+    diag_shortlist["room_number_match"] = (diag_shortlist['matched_room_number'] == diag_shortlist['reference_room_number'])
+
+    # Full number match is currently considered only a match between property number and flat number
+                               
+    diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) & (diag_shortlist["flat_number_match"] == True)
+   
     
     ### Postcodes need to be close together, so all the characters should match apart from the last two 
     diag_shortlist['close_postcode_match'] = diag_shortlist['postcode'].str[:-1] == diag_shortlist['Postcode'].str[:-1]
@@ -1905,8 +1907,11 @@ def refine_export_results (results_df:PandasDataFrame,
     diag_shortlist["full_match"] = (diag_shortlist["fuzzy_score_match"] == True) &\
                                     (diag_shortlist['full_number_match'] == True) &\
                                     (diag_shortlist['close_postcode_match'] == True)
+
+
+
     
-    diag_shortlist = diag_shortlist.sort_values(by = [matched_col, 'full_number_match'],ascending =False)
+    #diag_shortlist = diag_shortlist.sort_values(by = [matched_col, 'full_number_match'],ascending =False)
     
     #diag_shortlist.to_csv("diag_shortlist_interim.csv")
     
@@ -1924,9 +1929,7 @@ def refine_export_results (results_df:PandasDataFrame,
             'matched_room_number', 'reference_room_number', 
             'search_mod_address', 'reference_list_address','Postcode']] # , 'uprn'
     
-    diag_shortlist = diag_shortlist.rename(columns = {"search_orig_address":"search_orig_address",
-                                                      "search_mod_address": "search_mod_address",
-                                                      "matched_flat_number":"search_flat_number",
+    diag_shortlist = diag_shortlist.rename(columns = {"matched_flat_number":"search_flat_number",
                                                       "matched_room_number":"search_room_number",
                                                       "matched_property_number":"search_property_number",
                                                      "reference_list_address":"reference_mod_address"})
@@ -1934,27 +1937,30 @@ def refine_export_results (results_df:PandasDataFrame,
 
     '''
     If a matched address is duplicated, choose the version that has a number match, 
-    if there is no number match, then property match, then best fuzzy score, then show all options
+    if there is no number match, then property match, room number match, then best fuzzy score, then show all options
     '''  
-    diag_shortlist = diag_shortlist.sort_values(["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score"], ascending = False)
-    diag_best_match = diag_shortlist.drop_duplicates("search_mod_address")
+    
+    
+    ### Dealing with tie breaks ##
+    # Do a backup simple Wratio search on the open text to act as a tie breaker when the fuzzy scores are identical
+    def compare_strings_wratio(row, scorer = fuzz.WRatio):
+        search_score = process.cdist([row["search_mod_address"]], [row["reference_mod_address"]], scorer=scorer)
+        return search_score[0][0]
 
-    ## Split into matched and non-matched addresses for diagnostic purposes
-    diag_shortlist_match = diag_best_match[["search_orig_address",'reference_orig_address', 
-                                                                   'full_match',
+    diag_shortlist_dups = diag_shortlist.loc[diag_shortlist.duplicated(subset= ["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score"], keep=False)]
+    diag_shortlist_dups["wratio_score"] = diag_shortlist_dups.apply(compare_strings_wratio, axis=1)
+                               
+    diag_shortlist = diag_shortlist.merge(diag_shortlist_dups[["wratio_score"]], left_index=True, right_index=True, how = "left")
+                               
+    # Choose the best match
+    diag_shortlist = diag_shortlist.sort_values(["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score", "wratio_score"], ascending = False)
+    diag_best_match = diag_shortlist[["search_orig_address",'reference_orig_address', 'full_match',
                                           'full_number_match', 'room_number_match','flat_number_match',
                                             'property_number_match', 'close_postcode_match','fuzzy_score_match','fuzzy_score',
-                                           "search_mod_address","reference_mod_address",'Postcode']] # ,'uprn']
+                                           "search_mod_address","reference_mod_address",'Postcode']].drop_duplicates("search_mod_address")
 
-    diag_best_match_matched = diag_shortlist_match[diag_shortlist_match['full_match'] == True].sort_values(\
-                          ['fuzzy_score'], ascending = True)
-
-
-    diag_best_match_not_matched = diag_shortlist_match[diag_shortlist_match['full_match'] == False].sort_values(\
-                           ['fuzzy_score'], ascending = False)
-    
-    return compare_all_candidates, diag_shortlist, diag_best_match,\
-           diag_best_match_matched, diag_best_match_not_matched
+   
+    return compare_all_candidates, diag_shortlist, diag_best_match
 
 # # Neural net functions
 
@@ -2389,7 +2395,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     print('Running with ' + blocker_column[0] + ' as blocker has created', len(pairsSBM), 'pairs.')
     
     # If no pairs are found, break
-    if len(pairsSBM) == 0: return 0,0,0,0
+    if len(pairsSBM) == 0: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # Call the compare class from the toolkit 
     compareSBM = recordlinkage.Compare()
@@ -2484,7 +2490,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     ### Label rows that are above threshold score, reorder df
 
     # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
-    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 0.99238)
+    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 0.9955)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     
@@ -2778,18 +2784,25 @@ def perform_full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
                       text_columns = text_columns, blocker_column = blocker_column, weights = weights, fuzzy_method = fuzzy_method, score_cut_off = score_cut_off,
                                                search_df_key_field=search_df_key_field, standardise=standardise, new_join_col=new_join_col)
 
-    matched_output_SBM_pc["match_method"] = "Neural net - Postcode" #+ standard_label
 
-    if match_results.empty:
+    #print(matched_output_SBM_pc)
 
-        scoresSBM_new_matches_from_model_pc, scoresSBM_fuzzy_matches_not_found_by_model_pc, match_results_out_pc = \
-                                            check_matches_against_fuzzy(match_results=matched_output_SBM_pc,#match_results,
-                                                                              scoresSBM=scoresSBM_best_pc, search_df_key_field=search_df_key_field)
+    if matched_output_SBM_pc.empty:
+        print("Match results empty")
 
-        match_results_output_final_pc = matched_output_SBM_pc
+        return pd.DataFrame(),pd.DataFrame(), "Nothing to match!", predict_df
+
+        #scoresSBM_new_matches_from_model_pc, scoresSBM_fuzzy_matches_not_found_by_model_pc, match_results_out_pc = \
+        #                                    check_matches_against_fuzzy(match_results=matched_output_SBM_pc,#match_results,
+        #                                                                     scoresSBM=scoresSBM_best_pc, search_df_key_field=search_df_key_field)
+
+        #match_results_output_final_pc = matched_output_SBM_pc
         #match_results_output_final_pc = combine_std_df_remove_dups(match_results, matched_output_SBM_pc, orig_addr_col = search_df_key_field) # match_results
+        
 
     else:
+        matched_output_SBM_pc["match_method"] = "Neural net - Postcode" #+ standard_label
+        
         summary_base = create_match_summary(match_results, df_name = "baseline model (pre neural net matching)")
         print(summary_base)
         
@@ -2814,7 +2827,9 @@ def perform_full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     
     # If no matching pairs are found in the function above then it returns 0 - below we replace these values with the postcode blocker values
     # (which should almost always find at least one pair unless it's a very unusual situation
-    if type(matched_output_SBM_st) == int:
+    if (type(matched_output_SBM_st) == int) | matched_output_SBM_st.empty:
+        print("Nothing to match for street block")
+        
         all_scores_st = all_scores_pc
         scoresSBM_out_st = scoresSBM_out_pc
         scoresSBM_best_st = scoresSBM_best_pc

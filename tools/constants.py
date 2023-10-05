@@ -317,7 +317,6 @@ class MatcherClass:
 
         
         # Results attributes
-        self.match_results = pd.DataFrame()
         self.match_results_output = pd.DataFrame()
         self.predict_df_nnet = pd.DataFrame()
         
@@ -325,8 +324,6 @@ class MatcherClass:
         self.compare_all_candidates = []
         self.diag_shortlist = []
         self.diag_best_match = []
-        self.diag_best_match_matches = []
-        self.diag_best_match_not_matched = []
         
         self.results_on_orig_df = []
         self.summary = []

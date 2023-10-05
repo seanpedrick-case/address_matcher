@@ -101,7 +101,7 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         ''' Run fuzzy match on non-standardised dataset '''
         
         FuzzyNotStdMatch = fuzzy_funcs.run_fuzzy_match(Matcher = copy.copy(InitMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
-        print(FuzzyNotStdMatch.output_summary)
+        #print(FuzzyNotStdMatch.output_summary)
 
         if FuzzyNotStdMatch.abort_flag == True:
             print("Nothing to match!")
