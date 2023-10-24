@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: light
 #       format_version: '1.5'
-#       jupytext_version: 1.15.0
+#       jupytext_version: 1.14.4
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -15,13 +15,18 @@
 
 # # Load in packages, variables for fuzzy matching
 
+import os
+
+# Need to overwrite version of gradio present in Huggingface spaces as it doesn't have like buttons/avatars (Oct 2023)
+#os.system("pip uninstall -y gradio")
+os.system("pip install gradio==3.50.0")
+
 # +
 import numpy as np
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
 import time
-import os
 import copy
 
 today = datetime.now().strftime("%d%m%Y")
@@ -49,21 +54,48 @@ from tools.constants import *
 from tools import fuzzy_funcs
 
 
-# -
+
+def detect_file_type(filename):
+    """Detect the file type based on its extension."""
+    if (filename.endswith('.csv')) | (filename.endswith('.csv.gz')) | (filename.endswith('.zip')):
+        return 'csv'
+    elif filename.endswith('.xlsx'):
+        return 'xlsx'
+    elif filename.endswith('.parquet'):
+        return 'parquet'
+    else:
+        raise ValueError("Unsupported file type.")
+
+def read_file(filename):
+    """Read the file based on its detected type."""
+    file_type = detect_file_type(filename)
+    
+    if file_type == 'csv':
+        return pd.read_csv(filename, low_memory=False)
+    elif file_type == 'xlsx':
+        return pd.read_excel(filename)
+    elif file_type == 'parquet':
+        return pd.read_parquet(filename)
+
 
 def put_columns_in_df(in_file):
     new_choices = []
     concat_choices = []
     
     for file in in_file:
-        df = fuzzy_funcs.read_file(file.name)
-        #print(df.columns)
-        #print(list(df.columns))
+        df = read_file(file.name)
         new_choices = list(df.columns)
 
-        concat_choices.extend(new_choices)
-        concat_choices = list(set(concat_choices))
-    return gr.Dropdown.update(choices=new_choices), gr.Dropdown.update(choices=new_choices)
+        concat_choices.extend(new_choices)     
+        
+    return gr.Dropdown(choices=concat_choices), gr.Dropdown(choices=concat_choices)
+
+
+def dummy_function(in_colnames):
+    """
+    A dummy function that exists just so that dropdown updates work correctly.
+    """
+    return None    
 
 
 def clear_inputs(in_file, in_ref, in_text):
@@ -178,15 +210,15 @@ def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
     
     return summary_of_summaries, [FuzzyNNetStdMatch.results_orig_df_name, FuzzyNNetStdMatch.match_outputs_name]
 
-import importlib
-importlib.reload(fuzzy_funcs)
+#import importlib
+#importlib.reload(fuzzy_funcs)
 
 # +
 ''' Create the gradio interface '''
 
-block = gr.Blocks()#(theme = gr.themes.Base())
+block = gr.Blocks(theme = gr.themes.Base())
 
-with block as demo:
+with block:
     gr.Markdown(
     """
     # Address matcher
@@ -232,14 +264,22 @@ with block as demo:
         
     # Updates to components
         
-    in_file.change(fn=put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_existing])
-    in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])
+    #in_file.change(fn=put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_existing])
+    #in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])
     #in_ref.change(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_joincol])
+
+    in_file.upload(fn=put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_existing])
+    in_ref.upload(fn=put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])      
+
+    in_colnames.change(dummy_function, in_colnames, None)
+    in_colnames.change(dummy_function, in_existing, None)
+    in_colnames.change(dummy_function, in_refcol, None)
+    in_colnames.change(dummy_function, in_joincol, None)
 
     match_btn.click(fn=fuzz_match_single, inputs=[in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing],
                     outputs=[output_summary, output_file], api_name="address")#.\
             #then(fn=clear_inputs, inputs = [in_file, in_ref, in_text], outputs = [in_file, in_ref, in_text], queue=False)
-demo.queue(concurrency_count=1).launch(debug=True)
+block.queue(concurrency_count=1).launch(debug=True)
 # -
 
 
