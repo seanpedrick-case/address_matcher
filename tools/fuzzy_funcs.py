@@ -1,15 +1,12 @@
 # +
 import pandas as pd
 import numpy as np
-from typing import TypeVar, Dict, List, Tuple, Union
-import string
+from typing import TypeVar, Dict, List, Tuple
 from rapidfuzz import process
 from rapidfuzz import fuzz
 import torch
 import time
-import pyap
 import re
-from pathlib import Path
 import math
 from datetime import datetime
 
@@ -18,6 +15,8 @@ PandasSeries = TypeVar('pd.core.frame.Series')
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
+today = datetime.now().strftime("%d%m%Y")
+today_rev = datetime.now().strftime("%Y%m%d")
 
 # -
 
@@ -258,8 +257,8 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         print("Shape of search_df after filtering is: ")
         print(Matcher.search_df.shape)
     
-        Matcher.match_outputs_name = "diagnostics_initial" + today_rev + ".csv" #+ Matcher.file_name + "_" + Matcher.ref_name + "_"
-        Matcher.results_orig_df_name = "results_initial" + today_rev + ".csv" #Matcher.file_name + "_" + Matcher.ref_name + "_" 
+        Matcher.match_outputs_name = "diagnostics_initial_" + today_rev + ".csv" #+ Matcher.file_name + "_" + Matcher.ref_name + "_"
+        Matcher.results_orig_df_name = "results_initial_" + today_rev + ".csv" #Matcher.file_name + "_" + Matcher.ref_name + "_" 
     
         Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
         Matcher.pre_filter_search_df.to_csv(Matcher.results_orig_df_name, index = None)
@@ -725,7 +724,8 @@ def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> Pan
     df['one_number_no_flat'] =  df['one_number_no_flat'].str.replace(r"(\bapartment\b)|(\bapartments\b)", "", regex=True).str.replace(r"(\bflat\b)|(\bflats\b)", "", regex=True).str.replace(r"(\broom\b)|(\brooms\b)", "", regex=True)
 
     
-    merge_columns(df, "new_col", col1, 'one_number_no_flat')
+    #merge_columns(df, "new_col", col1, 'one_number_no_flat')
+    df["new_col"] = merge_series(df[col1], df["one_number_no_flat"]) #merge_series(full_series: pd.Series, partially_filled_series: pd.Series)
 
     #print(df)
     
@@ -738,7 +738,9 @@ def add_flat_addresses_start_with_letter(df:PandasDataFrame, col1:PandasSeries) 
     df['selected_rows'] = (df['contains_single_letter_at_start_before_number'] == True)
     df['flat_added_to_string_start'] =  "flat " + df[df['selected_rows'] == True][col1]
     
-    merge_columns(df, "new_col", col1, 'flat_added_to_string_start')
+    #merge_columns(df, "new_col", col1, 'flat_added_to_string_start')
+    df["new_col"] = merge_series(df[col1], df['flat_added_to_string_start'])
+    
     
     return df['new_col']
 
@@ -785,9 +787,8 @@ def extract_letter_one_number_address (df:PandasDataFrame, col1:PandasSeries) ->
                                 df[(df['selected_rows'])\
                                   ][col1].str.replace(r"\bflat\b","", regex=True).str.replace(r"\d+([a-z]|[A-Z])","", regex=True).map(str)
 
-    merge_columns(df, "new_col", col1, 'letter_after_number')
-    
-    #df['new_col'] = df[col1].fillna(df['letter_after_number'])
+    #merge_columns(df, "new_col", col1, 'letter_after_number')
+    df["new_col"] = merge_series(df[col1], df['letter_after_number'])
     
     return df['new_col']
 
@@ -843,42 +844,39 @@ def replace_floor_flat (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
 
     df['top_floor'] = "flat top " + df[df[col1].str.lower().str.contains(r"\btop floor\b"\
                                 )][col1].str.replace(r"\bflat\b","", regex=True).str.replace(r"\btop floor\b","", regex=True).map(str)
-
     
-    merge_columns(df, "new_col", col1, 'letter_after_number')
-    merge_columns(df, "new_col", "new_col", 'basement')
-    merge_columns(df, "new_col", "new_col", 'ground_floor')
-    merge_columns(df, "new_col", "new_col", 'first_floor')
-    merge_columns(df, "new_col", "new_col", 'first1_floor')
-    merge_columns(df, "new_col", "new_col", 'ground_and_first_floor') 
-    merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor') 
-    merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor2')
-    merge_columns(df, "new_col", "new_col", 'second_floor')
-    merge_columns(df, "new_col", "new_col", 'second2_floor')
-    merge_columns(df, "new_col", "new_col", 'first_and_second_floor')
-    merge_columns(df, "new_col", "new_col", 'ground_first_second_floor')
-    merge_columns(df, "new_col", "new_col", 'third_floor')
-    merge_columns(df, "new_col", "new_col", 'third3_floor')
-    merge_columns(df, "new_col", "new_col", 'top_floor')
+    #merge_columns(df, "new_col", col1, 'letter_after_number')
+    df["new_col"] = merge_series(df[col1], df['letter_after_number'])
+    df["new_col"] = merge_series(df["new_col"], df['basement'])
+    df["new_col"] = merge_series(df["new_col"], df['ground_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['first_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['first1_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['ground_and_first_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['basement_ground_and_first_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['basement_ground_and_first_floor2'])
+    df["new_col"] = merge_series(df["new_col"], df['second_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['second2_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['first_and_second_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['ground_first_second_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['third_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['third3_floor'])
+    df["new_col"] = merge_series(df["new_col"], df['top_floor'])
     
-    '''
-    df['new_col'] = df[col1].fillna(df['letter_after_number']).\
-                            fillna(df['basement']).\
-                            fillna(df['ground_floor']).\
-                            fillna(df['first_floor']).\
-                            fillna(df['first1_floor']).\
-                            fillna(df['ground_and_first_floor']).\
-                            fillna(df['basement_ground_and_first_floor']).\
-                            fillna(df['basement_ground_and_first_floor2']).\
-                            fillna(df['second_floor']).\
-                            fillna(df['second2_floor']).\
-                            fillna(df['first_and_second_floor']).\
-                            fillna(df['ground_first_second_floor']).\
-                            fillna(df['third_floor']).\
-                            fillna(df['third3_floor']).\
-                            fillna(df['top_floor'])
-    '''
-
+    #merge_columns(df, "new_col", col1, 'letter_after_number')
+    #merge_columns(df, "new_col", "new_col", 'basement')
+    #merge_columns(df, "new_col", "new_col", 'ground_floor')
+    #merge_columns(df, "new_col", "new_col", 'first_floor')
+    #merge_columns(df, "new_col", "new_col", 'first1_floor')
+    #merge_columns(df, "new_col", "new_col", 'ground_and_first_floor') 
+    #merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor') 
+    #merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor2')
+    #merge_columns(df, "new_col", "new_col", 'second_floor')
+    #merge_columns(df, "new_col", "new_col", 'second2_floor')
+    #merge_columns(df, "new_col", "new_col", 'first_and_second_floor')
+    #merge_columns(df, "new_col", "new_col", 'ground_first_second_floor')
+    #merge_columns(df, "new_col", "new_col", 'third_floor')
+    #merge_columns(df, "new_col", "new_col", 'third3_floor')
+    #merge_columns(df, "new_col", "new_col", 'top_floor')
     
     return df['new_col']
 
@@ -940,8 +938,8 @@ def extract_flat_no (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
               r"^\d+([a-z]|[A-Z])(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
              "no.","", regex=True)
         
-        flat_no = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)|flat (\w+)|apartment (\w+)|(\d+.*?)[^a-zA-Z0-9_].*?\d+|\b([A-Za-z])\b[^\d]* \d'\
-                                                                          ).rename(columns = {0:"prop_number", 1:"flat_number",2:"apart_number",3:"first_sec_number",4:"first_letter_flat_number"})
+        flat_no = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)|flat (\w+)|apartment (\w+)|(\d+.*?)[^a-zA-Z0-9_].*?\d+|\b([A-Za-z])\b[^\d]* \d|\bblock\b (\w+)'\
+                                                                          ).rename(columns = {0:"prop_number", 1:"flat_number",2:"apart_number",3:"first_sec_number",4:"first_letter_flat_number", 5:"block_number"})
     except:
        
         flat_no = np.nan
@@ -1028,7 +1026,7 @@ def merge_series(full_series: pd.Series, partially_filled_series: pd.Series) -> 
     # Replace values in merged_series where partially_filled_series is not null
     merged_series[~replacer_series_is_null] = partially_filled_series.dropna()
 
-    return merged_columns
+    return merged_series
 
 
 def clean_cols(col:str) -> str:
@@ -1146,8 +1144,11 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
         df_copy['remove_flat_house_or_court'] = remove_flat_house_or_court
         df_copy['house_court_replacement'] = "flat " + df_copy[df_copy['remove_flat_house_or_court'] == True]['flat_removed'].str.replace(r"\bflat\b","", regex=True\
                                                                                                                                          ).str.strip().map(str)       
-        df_copy["add_no_pcode_house"] = merge_columns(df_copy, "add_no_pcode_house", 'flat_removed', "house_court_replacement")
-        
+        #df_copy["add_no_pcode_house"] = merge_columns(df_copy, "add_no_pcode_house", 'flat_removed', "house_court_replacement")
+
+        #merge_columns(df, "new_col", col1, 'letter_after_number')
+        df_copy["add_no_pcode_house"] = merge_series(df_copy['flat_removed'], df_copy["house_court_replacement"])
+
         #df_copy["add_no_pcode_house"] = df_copy['flat_removed'].fillna(df_copy['house_court_replacement'])
     
         # Replace any addresses that don't have a space between the comma and the next word. and double spaces # df_copy['add_no_pcode_house']
@@ -1161,10 +1162,13 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
         # Add 'flat' to the start of addresses that include ground/first/second etc. floor flat in the text
         df_copy['floor_replacement'] = replace_floor_flat(df_copy, 'add_no_pcode_house_comma_no')
         df_copy['flat_added_to_start_addresses_begin_letter'] = add_flat_addresses_start_with_letter(df_copy, 'floor_replacement')
+
+        #merge_columns(df, "new_col", col1, 'letter_after_number')
+        #df["new_col"] = merge_series(df[col1], df['letter_after_number'])
+
+        #df_copy[out_col] = merge_columns(df_copy, out_col, 'add_no_pcode_house_comma_no', 'flat_added_to_start_addresses_begin_letter')
+        df_copy[out_col] = merge_series(df_copy['add_no_pcode_house_comma_no'], df_copy['flat_added_to_start_addresses_begin_letter'])
         
-        df_copy[out_col] = merge_columns(df_copy, out_col, 'add_no_pcode_house_comma_no', 'flat_added_to_start_addresses_begin_letter')
-        
-        #df_copy[out_col] = df_copy['add_no_pcode_house_comma_no'].fillna(df_copy['floor_replacement'])
 
         # Write stuff back to the original df
         df[out_col] = df_copy[out_col]
@@ -1179,26 +1183,35 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     df['property_number'] = extract_prop_no(df_copy, out_col)
     
     #try:    
-    df[['prop_number','flat_number', 'apart_number','first_sec_number', 'first_letter_flat_number']] = extract_flat_no(df_copy, out_col)
+    df[['prop_number','flat_number', 'apart_number','first_sec_number', 'first_letter_flat_number', 'block_number']] = extract_flat_no(df_copy, out_col)
     #except:
     #   print("error in one of the number columns")
     #  df['prop_number'] = np.nan
     # df['flat_number'] = np.nan
     #df['apart_number'] = np.nan
     #df['first_sec_number'] = np.nan
+
+    #merge_columns(df, "new_col", col1, 'letter_after_number')
+    #df["new_col"] = merge_series(df[col1], df['letter_after_number'])
+
+    df_copy['flat_number'] = merge_series(df['flat_number'], df['apart_number'])
+    df_copy['flat_number'] = merge_series(df['flat_number'], df['prop_number'])
+    df_copy['flat_number'] = merge_series(df['flat_number'], df['first_sec_number'])
+    df_copy['flat_number'] = merge_series(df['flat_number'], df['first_letter_flat_number'])
         
-    df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'apart_number')
-    df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'prop_number')
-    df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_sec_number')
-    df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_letter_flat_number')
+    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'apart_number')
+    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'prop_number')
+    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_sec_number')
+    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_letter_flat_number')
     
-    #df_copy['flat_number'] = df['flat_number'].fillna(df['apart_number'])
-    #df_copy['flat_number'] = df['flat_number'].fillna(df['prop_number'])
-    #df_copy['flat_number'] = df['flat_number'].fillna(df['first_sec_number'])
+    df_copy['block_number'] = df['block_number']
     
     df['room_number'] = extract_room_no(df_copy, out_col)
+
+    #df_copy['room_number'] = extract_room_no(df, out_col)
     
     return df, df[out_col]
+    #df_copy, df_copy[out_col]
 
 
 # # Overarching function
@@ -1838,22 +1851,24 @@ def refine_export_results(results_df:PandasDataFrame,
 
     ### Join property number and flat/room number onto results_df
 
-    reference_j = ref_list_df[[final_ref_address_col, "property_number","flat_number","room_number",\
+    reference_j = ref_list_df[[final_ref_address_col, "property_number","flat_number","room_number","block_number",\
                                orig_ref_address_col,"Postcode"\
                       ]].rename(columns={"property_number": "reference_property_number",\
                                          "flat_number":"reference_flat_number",\
-                                         "room_number":"reference_room_number",\
+                                         "room_number":"reference_room_number",
+                                         "block_number":"reference_block_number",\
                                          orig_ref_address_col: "reference_orig_address",\
                                         final_ref_address_col:'reference_list_address'                                         
                                         })
 
     results_join = results_join.merge(reference_j, how = "left", left_on = ref_list_col, right_on = "reference_list_address")
 
-    matched_j = matched_df[[final_matched_address_col,"property_number","flat_number","room_number",
+    matched_j = matched_df[[final_matched_address_col,"property_number","flat_number","room_number", "block_number",
                             orig_matched_address_col, "postcode",\
                              ]].rename(columns={"property_number": "matched_property_number",\
                                                 "flat_number":"matched_flat_number",\
                                                 "room_number":"matched_room_number",\
+                                                "block_number":"matched_block_number",\
                                                orig_matched_address_col:"search_orig_address",\
                                                final_matched_address_col:'search_mod_address'
                                                })
@@ -1893,10 +1908,12 @@ def refine_export_results(results_df:PandasDataFrame,
     diag_shortlist["property_number_match"] = (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"])
     diag_shortlist["flat_number_match"] = (diag_shortlist['matched_flat_number'] == diag_shortlist['reference_flat_number'])
     diag_shortlist["room_number_match"] = (diag_shortlist['matched_room_number'] == diag_shortlist['reference_room_number'])
+    diag_shortlist["block_number_match"] = (diag_shortlist['matched_block_number'] == diag_shortlist['reference_block_number'])
 
     # Full number match is currently considered only a match between property number and flat number
                                
-    diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) & (diag_shortlist["flat_number_match"] == True)
+    diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) & (diag_shortlist["flat_number_match"] == True) &\
+                                          (diag_shortlist["block_number_match"] == True)
    
     
     ### Postcodes need to be close together, so all the characters should match apart from the last two 
@@ -1920,17 +1937,20 @@ def refine_export_results(results_df:PandasDataFrame,
             'full_number_match',
             'flat_number_match',
             'room_number_match',
+            'block_number_match',
             'property_number_match',
             'close_postcode_match',
             'fuzzy_score_match',
             'fuzzy_score', 
             'matched_property_number', 'reference_property_number',  
             'matched_flat_number', 'reference_flat_number', 
-            'matched_room_number', 'reference_room_number', 
+            'matched_room_number', 'reference_room_number',
+            'matched_block_number', 'reference_block_number',
             'search_mod_address', 'reference_list_address','Postcode']] # , 'uprn'
     
     diag_shortlist = diag_shortlist.rename(columns = {"matched_flat_number":"search_flat_number",
                                                       "matched_room_number":"search_room_number",
+                                                      "matched_block_number":"search_block_number",
                                                       "matched_property_number":"search_property_number",
                                                      "reference_list_address":"reference_mod_address"})
  
@@ -1955,10 +1975,12 @@ def refine_export_results(results_df:PandasDataFrame,
     # Choose the best match
     diag_shortlist = diag_shortlist.sort_values(["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score", "wratio_score"], ascending = False)
     diag_best_match = diag_shortlist[["search_orig_address",'reference_orig_address', 'full_match',
-                                          'full_number_match', 'room_number_match','flat_number_match',
+                                          'full_number_match', 'room_number_match','flat_number_match', 'block_number_match',
                                             'property_number_match', 'close_postcode_match','fuzzy_score_match','fuzzy_score',
                                            "search_mod_address","reference_mod_address",'Postcode']].drop_duplicates("search_mod_address")
 
+
+    #diag_shortlist.to_csv("diagnostics_shortlist_" + today_rev + ".csv", index=None)
    
     return compare_all_candidates, diag_shortlist, diag_best_match
 
@@ -2490,7 +2512,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     ### Label rows that are above threshold score, reorder df
 
     # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
-    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 0.9955)
+    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 0.987)#0.9955)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     

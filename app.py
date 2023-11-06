@@ -22,7 +22,6 @@ import os
 os.system("pip install gradio==3.50.0")
 
 # +
-import numpy as np
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
@@ -33,10 +32,7 @@ today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 # -
 
-
 import gradio as gr
-import tensorflow as tf
-import recordlinkage
 
 # Base folder is where the code file is stored
 base_folder = Path(os.getcwd())
