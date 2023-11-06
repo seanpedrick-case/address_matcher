@@ -378,6 +378,7 @@ def prepare_search_address(
     
     # Ensure index column
     final_df = _ensure_index(full_df, key_col)
+
     
     return final_df, key_col
 
@@ -1479,143 +1480,25 @@ def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:Pan
                          matched_name=matched_output_name)
 
 
-# def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:PandasSeries,
-#                                        matched_index_df:PandasDataFrame,
-#                               reference_output_name='ref_list_address',
-#                               matched_output_name='search_df_prep_list_address',
-#                               search_limit=10, scorer_name="token_set_ratio")-> MatchedResults:
-#     '''
-#     Matches by Series values; for example idx is post code and 
-#     values address. Search field is reduced by comparing same post codes address reference_col.
-#     
-#     Default scorer is fuzz.Wratio. This tries to weight the different algorithms
-#     to give the best score.
-#     Choice of ratio type seems to make a big difference. Looking at this link:
-#     https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
-#     and this one: 
-#     https://stackoverflow.com/questions/31806695/when-to-use-which-fuzz-function-to-compare-2-strings    
-#     
-#     'partial_token_sort_ratio' seems like a good option based on my tests in
-#     the housing to ref match file. It accounts for words in a different order,
-#     and scores strings badly if they are significantly different lengths. It also
-#     doesn't depend a lot on full matches of just partial text in the string. 
-#     See the seetgeek link above for more details.
-#     '''
-#     def _create_frame_multiple(matched_results:MatchedResults,
-#                  index_name:str, matched_name:str) -> PandasDataFrame:
-#         """
-#         Helper function to convert results matched into desired frame format, 
-#         when multiple outputs are allowable in the string matching function
-#         """
-#             
-#         output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index':matched_name})
-#             
-#         output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
-#         output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
-#     
-#         return output
-#     
-#     results= {}
-#     counter = 0
-#
-#     scorer = getattr(fuzz, scorer_name)
-#                                   
-#     for current_index, (pc_match, add_match) in enumerate(match_col.items()): # .iteritems() is deprecated, so replaced
-#         
-#         # Link the search to the relevant ID in the original df
-#         #current_index = matched_index_df["search_address_stand"].iloc[counter]
-#            
-#         try:
-#             lookup = reference_col.loc[pc_match]
-#             
-#             if isinstance(lookup, str): # lookup can be a str-> 1 address per postcode
-#                 matched = process.extract(add_match,[lookup], scorer= scorer, limit = search_limit)
-#             
-#             else: # 1+ addresses
-#                 matched = process.extract(add_match,lookup.values, scorer=scorer, limit = search_limit)
-#             
-#             # If less matches than search limit found, add on NA entries to the search limit
-#             # Pad results with "NA" if less than search_limit
-#             matched += [("NA", 0)] * (search_limit - len(matched))
-#                 
-#             # matched = matched + [pc_match]
-#                                 
-#             results[current_index] = matched 
-#                         
-#             
-#         except KeyError: # no addresses for postcode, gives list of NA tuples           
-#                         
-#             matched = [("NA", 0)] * search_limit
-#                         
-#             results[current_index] = matched
-#         
-#         #counter = counter + 1
-#     return _create_frame_multiple(matched_results = results,index_name=reference_output_name,
-#                          matched_name=matched_output_name)
-
-# ##### Define the type for clearer annotations
-# MatchedResults = List[Tuple[str, int]]
-#
-# def string_match_by_post_code_multiple(
-#         match_col: pd.Series, 
-#         reference_col: pd.Series,
-#         matched_index_df: pd.DataFrame,
-#         reference_output_name: str = 'ref_list_address',
-#         matched_output_name: str = 'search_df_prep_list_address',
-#         search_limit: int = 10, 
-#         scorer_name: str = "token_set_ratio"
-#     ) -> pd.DataFrame:
-#
-#     '''
-#     Fuzzy matches two series.
-#     
-#     Default scorer is fuzz.Wratio. This tries to weight the different algorithms
-#     to give the best score.
-#     Choice of ratio type seems to make a big difference. Looking at this link:
-#     https://chairnerd.seatgeek.com/fuzzywuzzy-fuzzy-string-matching-in-python/
-#     and this one: 
-#     https://stackoverflow.com/questions/31806695/when-to-use-which-fuzz-function-to-compare-2-strings
-#     '''
-#     
-#     def _create_frame_multiple(
-#             matched_results: Dict[str, MatchedResults],
-#             index_name: str, 
-#             matched_name: str
-#         ) -> pd.DataFrame:
-#         output = pd.DataFrame(matched_results).T.reset_index().melt(id_vars = "index").rename(columns= {'index': matched_name})
-#         output[[index_name, 'score', 'ref_index']] = pd.DataFrame(output["value"].tolist(), index=output.index)   
-#         output = output.drop(["variable", "value", "ref_index"], axis = 1).sort_values(matched_name)
-#         return output
-#     
-#     # Get the scoring function once
-#     scorer = getattr(fuzz, scorer_name)
-#     
-#     results = {}
-#     for current_index, (pc_match, add_match) in enumerate(match_col.items()):
-#         
-#         # Check if the postal code exists in reference_col
-#         if pc_match in reference_col:
-#             lookup = reference_col.loc[pc_match]
-#             
-#             # Depending on the type of lookup, use appropriate method to match
-#             if isinstance(lookup, str):
-#                 matched = process.extract(add_match, [lookup], scorer=scorer, limit=search_limit)
-#             else:
-#                 matched = process.extract(add_match, lookup.values, scorer=scorer, limit=search_limit)
-#             
-#             # Pad results with "NA" if less than search_limit
-#             matched += [("NA", 0)] * (search_limit - len(matched))
-#         
-#         else:
-#             matched = [("NA", 0)] * search_limit
-#         
-#         results[matched_index_df["search_address_stand"].iloc[current_index]] = matched
-#
-#     return _create_frame_multiple(matched_results=results, index_name=reference_output_name, matched_name=matched_output_name)
-#
-# ##### The function has been optimized to some extent but needs testing with actual data.
-
 # ## Overarching fuzzy match function
+# Exclude non-postal addresses
+def remove_non_postal(df, in_address_series):
+    '''
+    Remove non-postal addresses from a pandas df where a string series that contain specific substrings
+    indicating non-postal addresses like 'garage', 'parking', 'shed', etc.
+    '''
+
+    garage_address_series = df[in_address_series].str.contains("\\bgarage\\b", regex=True)
+    parking_address_series = df[in_address_series].str.contains("\\bparking\\b", regex=True)
+    shed_address_series = df[in_address_series].str.contains("\\bshed\\b", regex=True)
+    bike_address_series = df[in_address_series].str.contains("\\bbike\\b", regex=True)
+    bicycle_store_address_series = df[in_address_series].str.contains("\\bbicycle store\\b", regex=True)
+
+    non_postal_series = (garage_address_series | parking_address_series | shed_address_series | bike_address_series | bicycle_store_address_series)
+
+    out_df = df[~non_postal_series]
+
+    return out_df
 
 def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
                      search_df_key_field, search_address_cols, search_postcode_col,\
@@ -1642,6 +1525,10 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     if type(search_df) == str: search_df_prep, search_df_key_field, search_address_cols = prepare_search_address_string(search_df)
     else: search_df_prep, search_df_key_field = prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field)
   
+    
+    search_df_prep = remove_non_postal(search_df_prep, "full_address")
+
+
     ref_df = prepare_ref_address(ref, ref_address_cols, new_join_col)
     
    
@@ -2708,6 +2595,10 @@ def perform_full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
 
     ## Prepare search_df data
     search_df_prep, search_df_key_field = prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field)
+
+    # Remove non-postal addresses from consideration
+    search_df_prep = remove_non_postal(search_df_prep, "full_address")
+
 
     search_df_prep, ref_df, search_df_match_list, ref_df_match_list, search_df_stand_col, ref_df_stand_col =\
                                                 standardise_wrapper_func(search_df_prep.copy(), ref_df,\
