@@ -546,6 +546,9 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
 
     search_df['postcode_search'] = search_df['postcode'].str.lower().str.strip().str.replace(" ", "",regex=False)
 
+    # Filter out records where 'Excluded from search' is not 'Included in search'
+    search_df = search_df[search_df['Excluded from search'] == "Included in search"]
+
     
     #assert not ref_df['Postcode'].isna().any() , "nulls in ref_df subset post code"
     # Remove nulls from ref postcode
@@ -1236,7 +1239,7 @@ def create_match_summary(match_results_output, df_name):
     ''' Create a summary paragraph '''
     full_match_count = match_results_output['full_match'][match_results_output['full_match'] == True].count()
     match_fail_count = match_results_output['full_match'][match_results_output['full_match'] == False].count()
-    records_attempted = int(sum(match_results_output['fuzzy_score']!=0.0))
+    records_attempted = int(sum((match_results_output['fuzzy_score']!=0.0) & ~(match_results_output['fuzzy_score'].isna())))
     dataset_length = len(match_results_output["full_match"])
     records_not_attempted = int(dataset_length - records_attempted)
     match_rate = str(round((full_match_count / dataset_length) * 100,1))
@@ -1245,8 +1248,8 @@ def create_match_summary(match_results_output, df_name):
     not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,2))
 
     summary = ("For the " + df_name + " dataset (" + str(dataset_length) + " records), the fuzzy matching algorithm successfully matched " + str(full_match_count) +
-               " records (" + match_rate + "%). The algorithm was not able to match " + str(records_not_attempted) +
-               " records (" + not_attempted_rate +  "%). This leaves " + str(match_fail_count_without_excluded) + " records left to match.")
+               " records (" + match_rate + "%). The algorithm had no success with matching " + str(records_not_attempted) +
+               " records (" + not_attempted_rate +  "%). There are " + str(match_fail_count_without_excluded) + " records left with more potential to match.")
     
     return summary
 
@@ -1487,18 +1490,25 @@ def remove_non_postal(df, in_address_series):
     Remove non-postal addresses from a pandas df where a string series that contain specific substrings
     indicating non-postal addresses like 'garage', 'parking', 'shed', etc.
     '''
+    df["in_address_series_temp"] = df[in_address_series].str.lower()
 
-    garage_address_series = df[in_address_series].str.contains("\\bgarage\\b", regex=True)
-    parking_address_series = df[in_address_series].str.contains("\\bparking\\b", regex=True)
-    shed_address_series = df[in_address_series].str.contains("\\bshed\\b", regex=True)
-    bike_address_series = df[in_address_series].str.contains("\\bbike\\b", regex=True)
-    bicycle_store_address_series = df[in_address_series].str.contains("\\bbicycle store\\b", regex=True)
+    garage_address_series = df["in_address_series_temp"].str.contains("\\bgarage\\b", regex=True)
+    parking_address_series = df["in_address_series_temp"].str.contains("\\bparking\\b", regex=True)
+    shed_address_series = df["in_address_series_temp"].str.contains("\\bshed\\b", regex=True)
+    bike_address_series = df["in_address_series_temp"].str.contains("\\bbike\\b", regex=True)
+    bicycle_store_address_series = df["in_address_series_temp"].str.contains("\\bbicycle store\\b", regex=True)
 
     non_postal_series = (garage_address_series | parking_address_series | shed_address_series | bike_address_series | bicycle_store_address_series)
 
-    out_df = df[~non_postal_series]
+    print(non_postal_series.value_counts())
+    
+    df.loc[non_postal_series == True, 'Excluded from search'] = "Excluded - non-postal address"
+    
+    df = df.drop("in_address_series_temp", axis = 1)
 
-    return out_df
+    df.to_csv("df_pre_postal_in_func.csv", index = None)
+
+    return df
 
 def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
                      search_df_key_field, search_address_cols, search_postcode_col,\
@@ -1528,6 +1538,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     
     search_df_prep = remove_non_postal(search_df_prep, "full_address")
 
+    search_df_prep.to_csv("search_df_prep_post_postal.csv", index = None)
 
     ref_df = prepare_ref_address(ref, ref_address_cols, new_join_col)
     
