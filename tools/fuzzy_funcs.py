@@ -141,9 +141,10 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
         #print(in_text)
         #print(in_file)
 
-        Matcher.file_name = get_file_name(in_file[0].name)
+        
     
         if in_file: 
+            Matcher.file_name = get_file_name(in_file[0].name)
             for match_file in in_file:
                 match_temp_file = pd.read_csv(match_file.name, delimiter = ",", low_memory=False)#, encoding='cp1252')
                 Matcher.search_df = pd.concat([Matcher.search_df, match_temp_file])
@@ -546,8 +547,8 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
 
     search_df['postcode_search'] = search_df['postcode'].str.lower().str.strip().str.replace(" ", "",regex=False)
 
-    # Filter out records where 'Excluded from search' is not 'Included in search'
-    search_df = search_df[search_df['Excluded from search'] == "Included in search"]
+    # Filter out records where 'Excluded from search' is not a postal address by making the postcode blank
+    search_df.loc[search_df['Excluded from search'] == "Excluded - non-postal address", 'postcode_search'] = ""
 
     
     #assert not ref_df['Postcode'].isna().any() , "nulls in ref_df subset post code"
@@ -560,32 +561,6 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     # Block only on first 5 characters of postcode string - Doesn't give more matches and makes everything a bit slower
     # search_df['postcode_search'] = search_df['postcode_search'].str[:-1]
 
-    ### Filter addresses to match to postcode areas present in both search_df and ref_df only (postcode without the last three characters)
-    #if filter_to_lambeth_pcodes == True:
-    #search_df["postcode_search_area"] = search_df["postcode_search"].str[:-3]
-    #ref_df["postcode_search_area"] = ref_df["postcode_search"].str[:-3]
-
-    #print("Shape of search_df before filtering is: ")
-    #print(search_df.shape)
-
-    #postcode_found = search_df["postcode_search_area"].isin(ref_df["postcode_search_area"])
-        
-    #search_df = search_df[postcode_found]
-    #print("Shape of search_df after filtering is: ")
-    #print(search_df.shape)
-
-                                   
-    ''' OLD CODE, NOT USED
-    if filter_to_lambeth_pcodes == True:
-        postcode_lookup_j = postcode_lookup.copy()[["pcd7","ladnm"]]
-
-        postcode_lookup_j["pcd7"] = postcode_lookup_j["pcd7"].str.lower()
-
-        search_df = pd.merge(search_df, postcode_lookup_j, how = "left", left_on = "postcode_search", right_on = "pcd7")
-
-        search_df = search_df[search_df["ladnm"] == "Lambeth"]
-        
-        search_df = search_df.drop("ladnm", axis=1)'''
 
     ### Use standardise function
 
@@ -605,17 +580,9 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     if match_task == "fuzzy":
         ref_join, ref_df_stand_col = standardise_address(ref_df, "full_address_search", "ref_address_stand", standardise = standardise, out_london = True)
     else:
-        # For the neural network reference data there will be additional text columns that can be standardised.
-        # I FOUND THAT THE STANDARDISATION PROCESS DID NOT HELP THE MODEL AT ALL, IN FACT IT REDUCED MATCHES AS STANDARDISING INDIVIDUAL REF COLUMNS GIVES YOU DIFFERENT RESULTS
+        # I FOUND THAT THE STANDARDISATION PROCESS ON REF FOR THE NEURAL NET PART DID NOT HELP THE MODEL AT ALL, IN FACT IT REDUCED MATCHES AS STANDARDISING INDIVIDUAL REF COLUMNS GIVES YOU DIFFERENT RESULTS
         # FROM STANDARDISING THE WHOLE ADDRESS, THEN BREAKING IT DOWN. SO DON'T STANDARDISE. THE MODEL WILL JUST STANDARDISE THE INPUT ADDRESSES ONLY
         ref_join, ref_df_stand_col = standardise_address(ref_df, "full_address_search", "ref_address_stand", standardise = False, out_london = True)
-        #ref_join_sao, ref_df_stand_col_sao = standardise_address(ref_df, "SaoText", "SaoText", standardise = standardise)
-        #ref_join_pao, ref_df_stand_col_pao = standardise_address(ref_df, "PaoText", "PaoText", standardise = standardise)
-        #ref_join_town, ref_df_stand_col_town = standardise_address(ref_df, "PostTown", "PostTown", standardise = standardise, out_london = False)
-                
-        #ref_join["SaoText"] = ref_df_stand_col_sao.str.upper()
-        #ref_join["PaoText"] = ref_df_stand_col_pao.str.upper()
-        #ref_join["PostTown"] = ref_df_stand_col_town.str.upper()
     
     ### Create lookup lists
     search_df_match_list = search_df_join.copy().set_index('postcode_search')['search_address_stand'].str.lower().str.strip()
@@ -909,7 +876,7 @@ def extract_prop_no (df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
                                                             ).str.replace(",", "", regex=True\
                                                               ).str.extract(r"(\d+\w+|\d+)(?!.*\d+)") #"(\d+\w+|\d+)(?!.*\d+)" 
     except:
-        room_no = np.nan
+        prop_no = np.nan
         
     return prop_no
 
@@ -999,24 +966,6 @@ def replace_mistaken_dates(df:PandasDataFrame, col:str) -> PandasSeries:
 
     return corrected_addresses
 
-
-def merge_columns(df:PandasDataFrame, new_col_name:str, full_column:PandasSeries, partially_filled_column:PandasSeries) -> PandasSeries:
-    '''
-    Merge two columns into a new column. The 'full column' is the column you want to replace values in
-    'partially_filled_column' is the replacer column. 'new_col_name' is the name of the newly
-    created column that merges details from both.
-    '''
-    replacer_column_is_null = df[partially_filled_column].isnull()
-
-    #df.loc[replacer_column_is_null, new_col_name] = df[replacer_column_is_null][full_column]
-
-    df[new_col_name] = df[full_column]
-
-    df.loc[~replacer_column_is_null, new_col_name] = df[~replacer_column_is_null][partially_filled_column]
-    
-    return df[new_col_name]
-
-
 def merge_series(full_series: pd.Series, partially_filled_series: pd.Series) -> pd.Series:
     '''
     Merge two series. The 'full_series' is the series you want to replace values in
@@ -1031,7 +980,6 @@ def merge_series(full_series: pd.Series, partially_filled_series: pd.Series) -> 
     merged_series[~replacer_series_is_null] = partially_filled_series.dropna()
 
     return merged_series
-
 
 def clean_cols(col:str) -> str:
     return col.lower().strip().replace(r" ", "_").strip()
@@ -1188,26 +1136,13 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     
     #try:    
     df[['prop_number','flat_number', 'apart_number','first_sec_number', 'first_letter_flat_number', 'block_number']] = extract_flat_no(df_copy, out_col)
-    #except:
-    #   print("error in one of the number columns")
-    #  df['prop_number'] = np.nan
-    # df['flat_number'] = np.nan
-    #df['apart_number'] = np.nan
-    #df['first_sec_number'] = np.nan
 
-    #merge_columns(df, "new_col", col1, 'letter_after_number')
-    #df["new_col"] = merge_series(df[col1], df['letter_after_number'])
 
     df_copy['flat_number'] = merge_series(df['flat_number'], df['apart_number'])
     df_copy['flat_number'] = merge_series(df['flat_number'], df['prop_number'])
     df_copy['flat_number'] = merge_series(df['flat_number'], df['first_sec_number'])
     df_copy['flat_number'] = merge_series(df['flat_number'], df['first_letter_flat_number'])
-        
-    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'apart_number')
-    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'prop_number')
-    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_sec_number')
-    #df_copy['flat_number'] = merge_columns(df, 'flat_number', 'flat_number', 'first_letter_flat_number')
-    
+            
     df_copy['block_number'] = df['block_number']
     
     df['room_number'] = extract_room_no(df_copy, out_col)
@@ -1499,14 +1434,10 @@ def remove_non_postal(df, in_address_series):
     bicycle_store_address_series = df["in_address_series_temp"].str.contains("\\bbicycle store\\b", regex=True)
 
     non_postal_series = (garage_address_series | parking_address_series | shed_address_series | bike_address_series | bicycle_store_address_series)
-
-    print(non_postal_series.value_counts())
     
     df.loc[non_postal_series == True, 'Excluded from search'] = "Excluded - non-postal address"
     
     df = df.drop("in_address_series_temp", axis = 1)
-
-    df.to_csv("df_pre_postal_in_func.csv", index = None)
 
     return df
 
@@ -1534,11 +1465,9 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
 
     if type(search_df) == str: search_df_prep, search_df_key_field, search_address_cols = prepare_search_address_string(search_df)
     else: search_df_prep, search_df_key_field = prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field)
-  
-    
+      
     search_df_prep = remove_non_postal(search_df_prep, "full_address")
 
-    search_df_prep.to_csv("search_df_prep_post_postal.csv", index = None)
 
     ref_df = prepare_ref_address(ref, ref_address_cols, new_join_col)
     
@@ -1810,7 +1739,9 @@ def refine_export_results(results_df:PandasDataFrame,
 
     # Full number match is currently considered only a match between property number and flat number
                                
-    diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) & (diag_shortlist["flat_number_match"] == True) &\
+    diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) &\
+                                          (diag_shortlist["flat_number_match"] == True) &\
+                                          (diag_shortlist["room_number_match"] == True) &\
                                           (diag_shortlist["block_number_match"] == True)
    
     
@@ -2286,10 +2217,9 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     ref_search[matching_variables] = ref_search[matching_variables].astype(str).replace("-999","")
 
     # SaoText needs to be exactly the same to get a 'full' match. So I moved that to the exact match group
-    exact_columns = main_list = list(set(matching_variables) - set(text_columns))
+    exact_columns = list(set(matching_variables) - set(text_columns))
 
     # Replace all blanks with a space, so they can be included in the fuzzy match searches
-
     for column in text_columns:
         predict_df_search[column][predict_df_search[column] == ''] = ' '
         ref_search[column][ref_search[column] == ''] = ' '
@@ -2326,7 +2256,10 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
     # Assign variables to matching technique - fuzzy
     for columns in text_columns:
-        compareSBM.string(columns, columns, label = columns, missing_value = 0, method = fuzzy_method)
+        if columns == "Postcode":
+            compareSBM.string(columns, columns, label = columns, missing_value = 0, method = "levenshtein")
+        else:
+            compareSBM.string(columns, columns, label = columns, missing_value = 0, method = fuzzy_method)
 
     ## Run the match - compare each column within the blocks according to exact or fuzzy matching (defined in cells above)
 
@@ -2336,20 +2269,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     
     scoresSBM_w = scoresSBM.copy()
 
-    # Fill in the 'NA' searches so that they are not counted in the scoring
-
-    #scoresSBM_w = scoresSBM_w.replace(-999, np.nan)
-
-    # Establish a fuzzy cut off - anything above this value is a 'match', anything below is a miss
-
-    #fuzzy_cut_off = 0.98
-
-    #for column in text_columns:
-    #    scoresSBM_w[column][scoresSBM_w[column] >= fuzzy_cut_off] = 1 
-    #    scoresSBM_w[column][scoresSBM_w[column] < fuzzy_cut_off] = 0
-
     #Modify the output scores by the weights set at the start of the code
-
     scoresSBM_w = scoresSBM_w*weights
 
     ### Determine matched roles that score above a threshold
@@ -2358,59 +2278,43 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     scoresSBM_r = scoresSBM_w.copy()
 
     scoresSBM_r['score'] = scoresSBM_r[matching_variables].sum(axis = 1)
-    #scoresSBM_r.loc[scoresSBM_r['score'].isna(),'score'] = 0
     scoresSBM_r['score_max'] = sum(weights.values()) # + 2 for the additional scoring from the weighted variables a couple of cells above
-    #- scoresSBM_r[matching_variables].isna().sum(axis = 1)
     scoresSBM_r['score_perc'] = scoresSBM_r['score'] / scoresSBM_r['score_max']
-    #scoresSBM_r.loc[scoresSBM_r['score_perc'].isna(),'score_perc'] = 0
 
-    # Sort by score, highest first 
-    #print(scoresSBM_r)
-                          
     scoresSBM_r = scoresSBM_r.reset_index()
-                          
-    #print(scoresSBM_r)
+
     # Rename the index if misnamed
     scoresSBM_r = scoresSBM_r.rename(columns={"index":"level_1"}, errors = "ignore")
+
+    # Sort all comparisons by score in descending order  
     scoresSBM_r = scoresSBM_r.sort_values(by=["level_0","score_perc"], ascending = False)
     
-
-    
-    
-
-    # Within each search, order descending by score and remove anything below the max
+    # Within each search address, remove anything below the max
     #scoresSBM_r.to_csv("scoresSBM_r.csv")
     scoresSBM_g = scoresSBM_r.reset_index()
-
     
-                          
-    
+    # Get maximum score to join on
     scoresSBM_g = scoresSBM_g.groupby("level_0").max("score_perc").reset_index()[["level_0", "score_perc"]]
     scoresSBM_g =scoresSBM_g.rename(columns={"score_perc":"score_perc_max"})
-
     scoresSBM_search_m = scoresSBM_r.merge(scoresSBM_g, on = "level_0", how="left")
 
+    # Filter potential matched address scores to those with highest scores only
     scoresSBM_search_m = scoresSBM_search_m[scoresSBM_search_m["score_perc"] == scoresSBM_search_m["score_perc_max"]]
- 
+    #scoresSBM_search_m.to_csv("scoresSBM_search_m.csv")
 
-    ## Join back search addresses onto matching df
-
+    ## Join back search and ref address details onto matching df
     scoresSBM_search_m_j = scoresSBM_search_m.merge(ref_search, left_on="level_1", right_index=True, how = "left", suffixes=("", "_ref"))
 
     scoresSBM_search_m_j = scoresSBM_search_m_j.merge(predict_df_search, left_on="level_0", right_index=True,how="left", suffixes=("", "_pred"))
 
     scoresSBM_search_m_j = scoresSBM_search_m_j.reindex(sorted(scoresSBM_search_m_j.columns), axis=1)
 
-                          
+    scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")                      
     
-    ## Join on ref full address
 
-    #scoresSBM_search_m_j = scoresSBM_search_m_j.merge(ref_search[["UPRN", "fulladdress"]].drop_duplicates("UPRN"), on="UPRN", how="left")
-
-    ### Label rows that are above threshold score, reorder df
 
     # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
-    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 0.987)#0.9955)
+    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)#0.9955)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     
@@ -2470,9 +2374,9 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     
     scoresSBM_out = scoresSBM_search_m_j[final_cols]
 
-    #scoresSBM_out.to_csv("scoresSBM_out" + "_" + blocker_column[0] + "_" + str(standardise) + ".csv")
+    scoresSBM_out.to_csv("scoresSBM_out" + "_" + blocker_column[0] + "_" + str(standardise) + ".csv")
     
-    ''' Create 'best' results df '''
+    # Choose 'best' result. This is currently just removing duplicates - not very satisfying!
 
     scoresSBM_best = scoresSBM_out.sort_values([search_df_key_field, "perc_weighted_columns_matched"]).drop_duplicates(search_df_key_field)
 

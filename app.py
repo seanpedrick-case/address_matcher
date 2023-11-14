@@ -1,19 +1,4 @@
-# ---
-# jupyter:
-#   jupytext:
-#     formats: ipynb,py:light
-#     text_representation:
-#       extension: .py
-#       format_name: light
-#       format_version: '1.5'
-#       jupytext_version: 1.14.4
-#   kernelspec:
-#     display_name: Python 3 (ipykernel)
-#     language: python
-#     name: python3
-# ---
-
-# # Load in packages, variables for fuzzy matching
+# Load in packages, variables for fuzzy matching
 
 import os
 
@@ -276,7 +261,3 @@ with block:
                     outputs=[output_summary, output_file], api_name="address")#.\
             #then(fn=clear_inputs, inputs = [in_file, in_ref, in_text], outputs = [in_file, in_ref, in_text], queue=False)
 block.queue(concurrency_count=1).launch(debug=True)
-# -
-
-
-
