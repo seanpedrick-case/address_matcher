@@ -1,4 +1,5 @@
 import gradio as gr
+import pandas as pd
 
 def detect_file_type(filename):
     """Detect the file type based on its extension."""
@@ -45,4 +46,3 @@ def dummy_function(in_colnames):
 
 def clear_inputs(in_file, in_ref, in_text):
     return gr.File.update(value=[]), gr.File.update(value=[]), gr.Textbox.update(value='')
-
