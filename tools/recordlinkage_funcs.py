@@ -80,7 +80,7 @@ def calc_final_nnet_scores(scoresSBM, weights, matching_variables):
 
         scoresSBM_r['score'] = scoresSBM_r[matching_variables].sum(axis = 1)
         scoresSBM_r['score_max'] = sum(weights.values()) # + 2 for the additional scoring from the weighted variables a couple of cells above
-        scoresSBM_r['score_perc'] = scoresSBM_r['score'] / scoresSBM_r['score_max']
+        scoresSBM_r['score_perc'] = (scoresSBM_r['score'] / scoresSBM_r['score_max'])*100
 
         scoresSBM_r = scoresSBM_r.reset_index()
 
@@ -109,11 +109,9 @@ def join_on_pred_ref_details(scoresSBM_search_m, ref_search, predict_df_search):
 
     scoresSBM_search_m_j = scoresSBM_search_m_j.reindex(sorted(scoresSBM_search_m_j.columns), axis=1)
 
-    scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv") 
+    #scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv") 
 
     return scoresSBM_search_m_j 
-
-    
 
 def rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, blocker_column, standardise):
 
@@ -168,98 +166,122 @@ def rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, b
     
     scoresSBM_out = scoresSBM_search_m_j[final_cols]
 
-    scoresSBM_out.to_csv("scoresSBM_out" + "_" + blocker_column[0] + "_" + str(standardise) + ".csv")
+    #scoresSBM_out.to_csv("scoresSBM_out" + "_" + blocker_column[0] + "_" + str(standardise) + ".csv")
 
     return scoresSBM_out, start_columns
 
-def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search_df, new_join_col, standardise):
+def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search_df, new_join_col, standardise, ref_search, blocker_column, score_cut_off):
 
-        ### Make the final 'matched output' file
+    ### Make the final 'matched output' file
+    scoresSBM_best_pred_cols = scoresSBM_best.filter(regex='_pred$').iloc[:,1:-1]
+    scoresSBM_best["search_orig_address"] = (scoresSBM_best_pred_cols.agg(' '.join, axis=1)).str.strip().str.replace("  ", " ").str.replace("  ", " ").str.replace("  ", " ")
 
-        scoresSBM_best_pred_cols = scoresSBM_best.filter(regex='_pred$').iloc[:,1:-1]
+    scoresSBM_best_ref_cols = scoresSBM_best.filter(regex='_ref$').iloc[:,1:-1]
+    scoresSBM_best['reference_mod_address'] = (scoresSBM_best_ref_cols.agg(' '.join, axis=1)).str.strip().str.replace("  ", " ").str.replace("  ", " ").str.replace("  ", " ")
 
-        scoresSBM_best["search_orig_address"] = (scoresSBM_best_pred_cols.agg(' '.join, axis=1)).str.strip().str.replace("  ", " ").str.replace("  ", " ").str.replace("  ", " ")
+    ## Create matched output df
+    matched_output_SBM = orig_search_df[[search_df_key_field, "full_address", "postcode", "property_number", "prop_number",	"flat_number",	"apart_number",	"block_number",	"room_number"]].replace(r"\bnan\b", "", regex=True)
+    matched_output_SBM[search_df_key_field] = matched_output_SBM[search_df_key_field].astype(str)
 
-        scoresSBM_best_ref_cols = scoresSBM_best.filter(regex='_ref$').iloc[:,1:-1]
-
-        scoresSBM_best['reference_mod_address'] = (scoresSBM_best_ref_cols.agg(' '.join, axis=1)).str.strip().str.replace("  ", " ").str.replace("  ", " ").str.replace("  ", " ")
-
-        ## Create matched output df
-        matched_output_SBM = orig_search_df[[search_df_key_field, "full_address"]]
-        matched_output_SBM[search_df_key_field] = matched_output_SBM[search_df_key_field].astype(str)
-
-        matched_output_SBM = matched_output_SBM.merge(scoresSBM_best[[search_df_key_field, 'address_ref',
-                                                                    'full_match_score_based', 'Reference file']], on = search_df_key_field, how = "left").\
-                                                                    rename(columns={"full_address":"search_orig_address"})
-
-        matched_output_SBM = matched_output_SBM.rename(columns={"full_match_score_based":"full_match"})
-
-        matched_output_SBM['property_number_match'] = matched_output_SBM['full_match']
-        
-        scores_SBM_best_cols = [search_df_key_field, 'full_match_score_based',  'perc_weighted_columns_matched',
-                                        'address_pred', "reference_mod_address"]
-        scores_SBM_best_cols.extend(new_join_col)
-
-        matched_output_SBM_b = scoresSBM_best[scores_SBM_best_cols]
-
-        matched_output_SBM = matched_output_SBM.merge(matched_output_SBM_b, on = search_df_key_field,  how = "left")
-
-        #matched_output_SBM["UPRN"] = scoresSBM_best['UPRN']
-
-        matched_output_SBM['standardised_address'] = standardise
-
-        matched_output_SBM = matched_output_SBM.rename(columns={"address_pred":"search_mod_address",
-                                                            "address_ref":"reference_orig_address",
-                                                            "full_match_score_based":"fuzzy_score_match",                                                        
-                                                        'perc_weighted_columns_matched':"fuzzy_score"})
-
-        matched_output_SBM_cols = [search_df_key_field, 'search_orig_address', 'reference_orig_address',
-        'full_match', 'fuzzy_score_match', 'property_number_match',
-        'fuzzy_score', 'search_mod_address', 'reference_mod_address', 'Reference file']
-        
-        matched_output_SBM_cols.extend(new_join_col)
-        matched_output_SBM_cols.extend(['standardised_address'])
-        matched_output_SBM = matched_output_SBM[matched_output_SBM_cols]
-        
-        matched_output_SBM = matched_output_SBM.sort_values(search_df_key_field, ascending=True)
-
-        return matched_output_SBM
-
-def score_based_match(predict_df_search, ref_search, orig_search_df, matching_variables,
-                      text_columns, blocker_column,  weights, fuzzy_method, score_cut_off, search_df_key_field, standardise, new_join_col):
+    ###
+    matched_output_SBM = matched_output_SBM.merge(scoresSBM_best[[search_df_key_field, 'address_ref', 
+        'full_match_score_based', 'Reference file']], on = search_df_key_field, how = "left").\
+        rename(columns={"full_address":"search_orig_address"})
     
-    scoresSBM = compute_match(predict_df_search, ref_search, orig_search_df, matching_variables,
-                      text_columns, blocker_column,  weights, fuzzy_method)   
+    #ref_search.to_csv("ref_search.csv")
+
+    matched_output_SBM = matched_output_SBM.merge(ref_search[["fulladdress", "Postcode", "property_number", "prop_number", "flat_number",	"apart_number",	"block_number",	"room_number", "ref_address_stand"]], left_on = "address_ref", right_on = "fulladdress", how = "left", suffixes=('_search', '_reference')).rename(columns={"fulladdress":"reference_orig_address", "ref_address_stand":"reference_list_address"})
+
+   # matched_output_SBM.to_csv("matched_output_SBM_" + str(standardise) + ".csv")
+
+    # To replace with number check
+   
+
+    matched_output_SBM = matched_output_SBM.rename(columns={"full_match_score_based":"full_match"})
+
+    matched_output_SBM['property_number_match'] = matched_output_SBM['full_match']
+    #
+
+    scores_SBM_best_cols = [search_df_key_field, 'full_match_score_based',  'perc_weighted_columns_matched', 'address_pred']#, "reference_mod_address"]
+    scores_SBM_best_cols.extend(new_join_col)
+
+    matched_output_SBM_b = scoresSBM_best[scores_SBM_best_cols]
+
+    matched_output_SBM = matched_output_SBM.merge(matched_output_SBM_b, on = search_df_key_field,  how = "left")
+
+    #matched_output_SBM.to_csv("matched_output_SBM_" + str(standardise) + ".csv")
+
+    from tools.fuzzy_match import create_diag_shortlist
+    matched_output_SBM = create_diag_shortlist(matched_output_SBM, "search_orig_address", score_cut_off, blocker_column, fuzzy_col='perc_weighted_columns_matched', search_mod_address="address_pred")
+
+    #matched_output_SBM.to_csv("matched_output_after.csv")
+    
+    #matched_output_SBM["UPRN"] = scoresSBM_best['UPRN']
+
+    matched_output_SBM['standardised_address'] = standardise
+
+    matched_output_SBM = matched_output_SBM.rename(columns={"address_pred":"search_mod_address",
+        #"address_ref":"reference_orig_address",
+        #"full_match_score_based":"fuzzy_score_match",                        
+        'perc_weighted_columns_matched':"fuzzy_score"})
+
+    matched_output_SBM_cols = [search_df_key_field, 'search_orig_address', 'reference_orig_address',
+    'full_match', 'fuzzy_score_match', 'full_number_match', 
+    'fuzzy_score', 'search_mod_address', 'reference_mod_address', 'Reference file']
+    
+    matched_output_SBM_cols.extend(new_join_col)
+    matched_output_SBM_cols.extend(['standardised_address'])
+    matched_output_SBM = matched_output_SBM[matched_output_SBM_cols]
+    
+    matched_output_SBM = matched_output_SBM.sort_values(search_df_key_field, ascending=True)
+
+
+    #matched_output_SBM.to_csv("matched_output_SBM_out.csv")
+
+
+    return matched_output_SBM
+
+def score_based_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method, score_cut_off, search_df_key_field, standardise, new_join_col):
+    
+    scoresSBM = compute_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method)   
     
     scoresSBM_search = calc_final_nnet_scores(scoresSBM, weights, matching_variables)
 
-
     # Filter potential matched address scores to those with highest scores only
     scoresSBM_search_m = scoresSBM_search[scoresSBM_search["score_perc"] == scoresSBM_search["score_perc_max"]]
-    #scoresSBM_search_m.to_csv("scoresSBM_search_m.csv")
 
     scoresSBM_search_m_j = join_on_pred_ref_details(scoresSBM_search_m, ref_search, predict_df_search)
+
+    scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
 
     # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
     if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)#0.9955)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     
-
     ### Reorder some columns
-    
     scoresSBM_out, start_columns = rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, blocker_column, standardise)
 
+    scoresSBM_out.to_csv("scoresSBM_out.csv")
 
     # Choose 'best' result. This is currently just removing duplicates - not very satisfying!
+    ### NEED TO NOT DO THIS FILTER BELOW UNTIL AFTER CREATING THE MATCH RESULTS
+    #scoresSBM_best = scoresSBM_out.sort_values([search_df_key_field, "perc_weighted_columns_matched"]).drop_duplicates(search_df_key_field)
 
-    scoresSBM_best = scoresSBM_out.sort_values([search_df_key_field, "perc_weighted_columns_matched"]).drop_duplicates(search_df_key_field)
+    #matched_output_SBM = create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search_df, new_join_col, standardise, ref_search, blocker_column, score_cut_off)
+    matched_output_SBM = create_matched_results_nnet(scoresSBM_out, search_df_key_field, orig_search_df, new_join_col, standardise, ref_search, blocker_column, score_cut_off)
 
+    matched_output_SBM_best = matched_output_SBM.sort_values([search_df_key_field, "full_match"], ascending = [True, False]).drop_duplicates(search_df_key_field)
 
-    matched_output_SBM = create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search_df, new_join_col, standardise)
+    #print(matched_output_SBM_best.columns)
+    #print(scoresSBM_out.columns)
 
-    
-    return scoresSBM, scoresSBM_out, scoresSBM_best, matched_output_SBM
+    matched_output_SBM.to_csv("matched_output_SBM.csv")
+    matched_output_SBM_best.to_csv("matched_output_SBM_best.csv")
+
+    scoresSBM_best = scoresSBM_out[scoresSBM_out[search_df_key_field].isin(matched_output_SBM_best[search_df_key_field])]
+
+    return scoresSBM, scoresSBM_out, scoresSBM_best, matched_output_SBM_best
 
 def check_matches_against_fuzzy(match_results, scoresSBM, search_df_key_field):
 

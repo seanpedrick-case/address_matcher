@@ -12,7 +12,6 @@ array = List[str]
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
-
 def string_match_array(to_match:array, choices:array,
                       index_name:str, matched_name:str) -> PandasDataFrame:
     
@@ -22,9 +21,7 @@ def string_match_array(to_match:array, choices:array,
     return _create_frame(matched_results=temp, index_name=index_name,
                         matched_name=matched_name)
 
-
-# ## Fuzzy match algorithm
-
+# Fuzzy match algorithm
 def create_fuzzy_matched_col(df, orig_match_col, pred_match_col, fuzzy_method:"WRatio", match_score=95):
 
     results = []
@@ -49,8 +46,6 @@ def create_fuzzy_matched_col(df, orig_match_col, pred_match_col, fuzzy_method:"W
     df.loc[df[new_result_col_score].isna(), new_result_col_match] = np.nan
     
     return df
-
-
 
 def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:PandasSeries,
                                        matched_index_df:PandasDataFrame,
@@ -128,7 +123,6 @@ def string_match_by_post_code_multiple(match_col:PandasSeries, reference_col:Pan
     return _create_frame_multiple(matched_results = results,index_name=reference_output_name,
                          matched_name=matched_output_name)
 
-
 def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join, fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col):
 
         ## Diagnostics
@@ -170,31 +164,33 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         
         return match_results_output, compare_all_candidates, diag_shortlist, diag_best_match
 
-
-def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col):
+def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address"):
         '''
         Create a shortlist of the best matches from a list of suggested matches
         '''
 
         ## Calculate highest fuzzy score from all candidates, keep all candidates with matching highest fuzzy score
-        results_max_fuzzy_score = diag_j.groupby(matched_col)["fuzzy_score"].max().reset_index().rename(columns={"fuzzy_score": "max_fuzzy_score"})
+        results_max_fuzzy_score = diag_j.groupby(matched_col)[fuzzy_col].max().reset_index().rename(columns={fuzzy_col: "max_fuzzy_score"})
 
         diag_shortlist = pd.merge(diag_j, results_max_fuzzy_score, how = "left", on = matched_col)
-        diag_shortlist = diag_shortlist[diag_shortlist["fuzzy_score"] == diag_shortlist["max_fuzzy_score"]]
+
+        diag_shortlist = diag_shortlist[(diag_shortlist[fuzzy_col] == diag_shortlist["max_fuzzy_score"])]# | (diag_shortlist["max_fuzzy_score"].isnull())]
+
+        #diag_shortlist.to_csv("diag_shortlist.csv")
 
         # Fuzzy match limit for records with no numbers in it is 0.95 or the provided fuzzy_match_limit, whichever is higher
-        diag_shortlist["fuzzy_score_match"] = diag_shortlist['fuzzy_score'] >= fuzzy_match_limit
+        diag_shortlist["fuzzy_score_match"] = diag_shortlist[fuzzy_col] >= fuzzy_match_limit
 
-        if fuzzy_match_limit > 0.95: no_number_fuzzy_match_limit = fuzzy_match_limit
+        if fuzzy_match_limit > 95: no_number_fuzzy_match_limit = fuzzy_match_limit
         else: no_number_fuzzy_match_limit = fuzzy_match_limit
 
         ### Count number of numbers in search string
-        diag_shortlist["number_count_search_string"] =  diag_shortlist["search_mod_address"].str.count(r'\d')
+        diag_shortlist["number_count_search_string"] =  diag_shortlist[search_mod_address].str.count(r'\d')
         diag_shortlist["no_numbers_in_search_string"] = diag_shortlist["number_count_search_string"] == 0
 
         # Replace fuzzy_score_match values for addresses with no numbers in them
-        diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist['fuzzy_score'] >= no_number_fuzzy_match_limit), "fuzzy_score_match"] = True
-        diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist['fuzzy_score'] < no_number_fuzzy_match_limit), "fuzzy_score_match"] = False
+        diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist[fuzzy_col] >= no_number_fuzzy_match_limit), "fuzzy_score_match"] = True
+        diag_shortlist.loc[(diag_shortlist["no_numbers_in_search_string"]==True) & (diag_shortlist[fuzzy_col] < no_number_fuzzy_match_limit), "fuzzy_score_match"] = False
 
         # If blocking on street, don't match addresses with 0 numbers in. There are too many options and the matches are rarely good
         if blocker_col == "Street":
@@ -203,77 +199,55 @@ def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col):
         diag_shortlist = diag_shortlist.fillna("").drop(["number_count_search_string", "no_numbers_in_search_string"], axis = 1)
 
         # Following considers full matches to be those that match on property number and flat number, and the postcode is relatively close.
-    
-    
-        diag_shortlist["property_number_match"] = (diag_shortlist["reference_property_number"] == diag_shortlist["matched_property_number"])
-        diag_shortlist["flat_number_match"] = (diag_shortlist['matched_flat_number'] == diag_shortlist['reference_flat_number'])
-        diag_shortlist["room_number_match"] = (diag_shortlist['matched_room_number'] == diag_shortlist['reference_room_number'])
-        diag_shortlist["block_number_match"] = (diag_shortlist['matched_block_number'] == diag_shortlist['reference_block_number'])
+        #print(diag_shortlist.columns) 
+        diag_shortlist["property_number_match"] = (diag_shortlist["property_number_search"] == diag_shortlist["property_number_reference"])
+        diag_shortlist["flat_number_match"] = (diag_shortlist['flat_number_search'] == diag_shortlist['flat_number_reference'])
+        diag_shortlist["room_number_match"] = (diag_shortlist['room_number_search'] == diag_shortlist['room_number_reference'])
+        diag_shortlist["block_number_match"] = (diag_shortlist['block_number_search'] == diag_shortlist['block_number_reference'])
 
         # Full number match is currently considered only a match between property number and flat number
                                 
         diag_shortlist['full_number_match'] = (diag_shortlist["property_number_match"] == True) &\
-                                            (diag_shortlist["flat_number_match"] == True) &\
-                                            (diag_shortlist["room_number_match"] == True) &\
-                                            (diag_shortlist["block_number_match"] == True)
+            (diag_shortlist["flat_number_match"] == True) &\
+            (diag_shortlist["room_number_match"] == True) &\
+            (diag_shortlist["block_number_match"] == True)
     
         
         ### Postcodes need to be close together, so all the characters should match apart from the last two 
-        diag_shortlist['close_postcode_match'] = diag_shortlist['postcode'].str[:-1] == diag_shortlist['Postcode'].str[:-1]
-        
-        
+        diag_shortlist['close_postcode_match'] = diag_shortlist['postcode'].str[:-2] == diag_shortlist['Postcode'].str[:-2]
+          
         
         diag_shortlist["full_match"] = (diag_shortlist["fuzzy_score_match"] == True) &\
-                                        (diag_shortlist['full_number_match'] == True) &\
-                                        (diag_shortlist['close_postcode_match'] == True)
-
+            (diag_shortlist['full_number_match'] == True) &\
+            (diag_shortlist['close_postcode_match'] == True)
         
-        diag_shortlist = diag_shortlist[['search_orig_address','reference_orig_address',
-                'full_match',
-                'full_number_match',
-                'flat_number_match',
-                'room_number_match',
-                'block_number_match',
-                'property_number_match',
-                'close_postcode_match',
-                'fuzzy_score_match',
-                'fuzzy_score', 
-                'matched_property_number', 'reference_property_number',  
-                'matched_flat_number', 'reference_flat_number', 
-                'matched_room_number', 'reference_room_number',
-                'matched_block_number', 'reference_block_number',
-                'search_mod_address', 'reference_list_address','Postcode']] # , 'uprn'
-        
-        diag_shortlist = diag_shortlist.rename(columns = {"matched_flat_number":"search_flat_number",
-                                                        "matched_room_number":"search_room_number",
-                                                        "matched_block_number":"search_block_number",
-                                                        "matched_property_number":"search_property_number",
-                                                        "reference_list_address":"reference_mod_address"})
-    
+        #diag_shortlist = diag_shortlist.rename(columns = {"flat_number_search":"search_flat_number",
+        #    "room_number_search":"search_room_number",
+        #    "block_number_search":"search_block_number",
+        #    "property_number_search":"search_property_number",
+        diag_shortlist = diag_shortlist.rename(columns = {"reference_list_address":"reference_mod_address"})
 
         '''
         If a matched address is duplicated, choose the version that has a number match, 
         if there is no number match, then property match, room number match, then best fuzzy score, then show all options
-        '''  
-        
+        '''
         
         ### Dealing with tie breaks ##
         # Do a backup simple Wratio search on the open text to act as a tie breaker when the fuzzy scores are identical
-        def compare_strings_wratio(row, scorer = fuzz.WRatio):
-            search_score = process.cdist([row["search_mod_address"]], [row["reference_mod_address"]], scorer=scorer)
+        def compare_strings_wratio(row, scorer = fuzz.WRatio, fuzzy_col = fuzzy_col):
+            search_score = process.cdist([row[search_mod_address]], [row["reference_mod_address"]], scorer=scorer)
             return search_score[0][0]
 
-        diag_shortlist_dups = diag_shortlist.loc[diag_shortlist.duplicated(subset= ["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score"], keep=False)]
+        diag_shortlist_dups = diag_shortlist[diag_shortlist['full_number_match'] == True]
+        diag_shortlist_dups = diag_shortlist_dups.loc[diag_shortlist_dups.duplicated(subset= [search_mod_address, 'full_number_match', "room_number_search", fuzzy_col], keep=False)]
         diag_shortlist_dups["wratio_score"] = diag_shortlist_dups.apply(compare_strings_wratio, axis=1)
                                 
         diag_shortlist = diag_shortlist.merge(diag_shortlist_dups[["wratio_score"]], left_index=True, right_index=True, how = "left")
                                 
         # Choose the best match
-        diag_shortlist = diag_shortlist.sort_values(["search_mod_address", 'full_number_match', "search_room_number", "fuzzy_score", "wratio_score"], ascending = False)
+        diag_shortlist = diag_shortlist.sort_values([search_mod_address, 'full_number_match', "room_number_search", fuzzy_col, "wratio_score"], ascending = False)
 
         return diag_shortlist
-
-
 
 def refine_export_results(results_df:PandasDataFrame, 
                            matched_df:PandasDataFrame, ref_list_df:PandasDataFrame,
@@ -300,43 +274,59 @@ def refine_export_results(results_df:PandasDataFrame,
     ### Join property number and flat/room number onto results_df
 
     reference_j = ref_list_df[[final_ref_address_col, "property_number","flat_number","room_number","block_number",\
-                               orig_ref_address_col,"Postcode"\
-                      ]].rename(columns={"property_number": "reference_property_number",\
-                                         "flat_number":"reference_flat_number",\
-                                         "room_number":"reference_room_number",
-                                         "block_number":"reference_block_number",\
-                                         orig_ref_address_col: "reference_orig_address",\
-                                        final_ref_address_col:'reference_list_address'                                         
-                                        })
+            orig_ref_address_col,"Postcode"\
+    ]].rename(columns={"property_number": "property_number_reference",\
+                        "flat_number":"flat_number_reference",\
+                        "room_number":"room_number_reference",
+                        "block_number":"block_number_reference",\
+                        orig_ref_address_col: "reference_orig_address",\
+                    final_ref_address_col:'reference_list_address'             
+                    })
 
     results_join = results_join.merge(reference_j, how = "left", left_on = ref_list_col, right_on = "reference_list_address")
 
     matched_j = matched_df[[final_matched_address_col,"property_number","flat_number","room_number", "block_number",
-                            orig_matched_address_col, "postcode",\
-                             ]].rename(columns={"property_number": "matched_property_number",\
-                                                "flat_number":"matched_flat_number",\
-                                                "room_number":"matched_room_number",\
-                                                "block_number":"matched_block_number",\
-                                               orig_matched_address_col:"search_orig_address",\
-                                               final_matched_address_col:'search_mod_address'
-                                               })
+        orig_matched_address_col, "postcode",\
+            ]].rename(columns={"property_number": "property_number_search",\
+                            "flat_number":"flat_number_search",\
+                            "room_number":"room_number_search",\
+                            "block_number":"block_number_search",\
+                            orig_matched_address_col:"search_orig_address",\
+                            final_matched_address_col:'search_mod_address'
+                            })
 
-    diag_j = results_join.merge(matched_j, how = "left", left_on = matched_col, right_on = "search_mod_address") 
+    diag_j = results_join.merge(matched_j, how = "left", left_on = matched_col, right_on = "search_mod_address")
+
+    #diag_j.to_csv("diag_j.csv")
     
     diag_shortlist = create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col)
 
+    diag_shortlist = diag_shortlist[['search_orig_address','reference_orig_address',
+        'full_match',
+        'full_number_match',
+        'flat_number_match',
+        'room_number_match',
+        'block_number_match',
+        'property_number_match',
+        'close_postcode_match',
+        'fuzzy_score_match',
+        "fuzzy_score", 
+        'property_number_search', 'property_number_reference',  
+        'flat_number_search', 'flat_number_reference', 
+        'room_number_search', 'room_number_reference',
+        'block_number_search', 'block_number_reference',
+        "search_mod_address", 'reference_mod_address','Postcode']] # , 'uprn'
+
     # Choose best match from the shortlist that has been ordered according to score descending
     diag_best_match = diag_shortlist[["search_orig_address",'reference_orig_address', 'full_match',
-                                          'full_number_match', 'room_number_match','flat_number_match', 'block_number_match',
-                                            'property_number_match', 'close_postcode_match','fuzzy_score_match','fuzzy_score',
-                                           "search_mod_address","reference_mod_address",'Postcode']].drop_duplicates("search_mod_address")
+        'full_number_match', 'room_number_match','flat_number_match', 'block_number_match',
+        'property_number_match', 'close_postcode_match','fuzzy_score_match','fuzzy_score',
+        "search_mod_address","reference_mod_address",'Postcode']].drop_duplicates("search_mod_address")
 
 
-    #diag_shortlist.to_csv("diagnostics_shortlist_" + today_rev + ".csv", index=None)
+    diag_shortlist.to_csv("diagnostics_shortlist_" + today_rev + ".csv", index=None)
    
     return compare_all_candidates, diag_shortlist, diag_best_match
-
-
 
 def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_join_col):
     

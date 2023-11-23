@@ -438,8 +438,8 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     
     # RUN WITH POSTCODE AS A BLOCKER #
     # Fuzzy match against reference addresses
-    pd.Series(ref_df_match_list).to_csv("ref_df_match_list.csv")
-    pd.Series(search_df_prep_match_list).to_csv("search_df_prep_match_list.csv")
+    #pd.Series(ref_df_match_list).to_csv("ref_df_match_list.csv")
+    #pd.Series(search_df_prep_match_list).to_csv("search_df_prep_match_list.csv")
     
     # Remove rows where postcode is not in ref df
     index_check = ref_df_match_list.index.isin(search_df_prep_match_list.index)
@@ -571,8 +571,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
 def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
                        search_postcode_col, search_df_key_field, 
                       standardise, exported_model, matching_variables,
-                       text_columns, weights, fuzzy_method, score_cut_off,
-                         match_results, filter_to_lambeth_pcodes, 
+                       text_columns, weights, fuzzy_method, score_cut_off, match_results, filter_to_lambeth_pcodes, 
                           model_type, word_to_index, cat_to_idx, device, vocab, labels_list, new_join_col=["UPRN"]):
 
     # Break if search item has length 0
@@ -592,9 +591,11 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
 
 
     search_df_prep, ref_df, search_df_match_list, ref_df_match_list, search_df_stand_col, ref_df_stand_col =\
-                                                standardise_wrapper_func(search_df_prep.copy(), ref_df,\
-                                                standardise = standardise,
-                                                filter_to_lambeth_pcodes = filter_to_lambeth_pcodes, match_task = "nnet")
+        standardise_wrapper_func(search_df_prep.copy(), ref_df,\
+        standardise = standardise,
+        filter_to_lambeth_pcodes = filter_to_lambeth_pcodes, match_task = "nnet")
+    
+    #search_df_prep.to_csv("search_df_prep_nnet.csv")
 
     # Predict on search data to extract LPI address components
 
@@ -614,7 +615,6 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     #print(predict_df['address'].isin(pd.Series(predict_data).str.upper()).value_counts())
     #predict_df = predict_df[predict_df['address'].isin(pd.Series(predict_data).str.upper())]
     #print(predict_df)
-
 
     max_predict_len = 12000
 
@@ -636,8 +636,8 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
         
         if (model_type == "gru") | (model_type == "lstm"):
             list_out, predict_df = full_predict_torch(model=exported_model, model_type=model_type, 
-                                                      input_text=chunk_data, word_to_index=word_to_index, 
-                                                      cat_to_idx=cat_to_idx, device=device)
+                input_text=chunk_data, word_to_index=word_to_index, 
+                cat_to_idx=cat_to_idx, device=device)
         else:
             list_out, predict_df = full_predict_func(chunk_data, exported_model, vocab, labels_list)
             
@@ -653,7 +653,7 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     print(f"Performed the NN prediction in {toc - tic:0.1f} seconds")
     
     predict_df = post_predict_clean(predict_df=predict_df_all, orig_search_df=search_df_prep, 
-                                       ref_address_cols=ref_address_cols, search_df_key_field=search_df_key_field)
+        ref_address_cols=ref_address_cols, search_df_key_field=search_df_key_field)
 
 
     # Score-based matching between neural net predictions and fuzzy match results
@@ -672,9 +672,8 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     blocker_column = ["Postcode"]
 
     all_scores_pc, scoresSBM_out_pc, scoresSBM_best_pc, matched_output_SBM_pc = score_based_match(predict_df_search = predict_df.copy(), ref_search = ref_df.copy(),
-                                                                                                        orig_search_df = search_df_prep, matching_variables = matching_variables,
-                      text_columns = text_columns, blocker_column = blocker_column, weights = weights, fuzzy_method = fuzzy_method, score_cut_off = score_cut_off,
-                                               search_df_key_field=search_df_key_field, standardise=standardise, new_join_col=new_join_col)
+        orig_search_df = search_df_prep, matching_variables = matching_variables,
+                      text_columns = text_columns, blocker_column = blocker_column, weights = weights, fuzzy_method = fuzzy_method, score_cut_off = score_cut_off, search_df_key_field=search_df_key_field, standardise=standardise, new_join_col=new_join_col)
 
 
     #print(matched_output_SBM_pc)
@@ -706,8 +705,7 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
 
     all_scores_st, scoresSBM_out_st, scoresSBM_best_st, matched_output_SBM_st = score_based_match(predict_df_search = predict_df.copy(), ref_search = ref_df.copy(), 
                                                                                                   orig_search_df = search_df_prep, matching_variables = matching_variables,
-                      text_columns = text_columns, blocker_column = blocker_column, weights = weights, fuzzy_method = fuzzy_method, score_cut_off = score_cut_off,
-                                               search_df_key_field=search_df_key_field, standardise=standardise, new_join_col=new_join_col)
+                      text_columns = text_columns, blocker_column = blocker_column, weights = weights, fuzzy_method = fuzzy_method, score_cut_off = score_cut_off, search_df_key_field=search_df_key_field, standardise=standardise, new_join_col=new_join_col)
     
     # If no matching pairs are found in the function above then it returns 0 - below we replace these values with the postcode blocker values
     # (which should almost always find at least one pair unless it's a very unusual situation
@@ -722,7 +720,7 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     else: matched_output_SBM_st["match_method"] = "Neural net - Street" #+ standard_label
 
     scoresSBM_new_matches_from_model_st, scoresSBM_fuzzy_matches_not_found_by_model_st, match_results_out_st = \
-                                            check_matches_against_fuzzy(match_results=match_results_output_final_pc, 
+        check_matches_against_fuzzy(match_results=match_results_output_final_pc, 
                                                                         scoresSBM=scoresSBM_best_st, search_df_key_field=search_df_key_field)
     
 
@@ -766,8 +764,18 @@ def combine_std_df_remove_dups(df_not_std, df_std, orig_addr_col = "search_orig_
 
     #df_not_std = df_not_std.reset_index(drop=True)
     #df_std = df_std.reset_index(drop=True)
+
+    #print(df_not_std.index.duplicated().sum())
+    #print(df_std.index.duplicated().sum())
+
+    #df_not_std.to_csv("df_not_std.csv")
+    #df_std.to_csv("df_std.csv")
+
+    combined_std_not_matches = pd.concat([df_not_std, df_std])#, ignore_index=True)
+    combined_std_not_matches = combined_std_not_matches.sort_values([orig_addr_col, match_col], ascending=False)
+
                            
-    combined_std_not_matches = pd.concat([df_not_std, df_std]).sort_values([orig_addr_col, match_col], ascending = False)
+    #combined_std_not_matches = pd.concat([df_not_std, df_std], ignore_index=True).sort_values([orig_addr_col, match_col], ascending = False)
     
     if keep_only_duplicated == True:
         combined_std_not_matches = combined_std_not_matches[combined_std_not_matches.duplicated(orig_addr_col)]
