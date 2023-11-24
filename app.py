@@ -3,7 +3,7 @@ import os
 
 # Need to overwrite version of gradio present in Huggingface spaces as it doesn't have like buttons/avatars (Oct 2023)
 #os.system("pip uninstall -y gradio")
-os.system("pip install gradio==3.50.0")
+#os.system("pip install gradio==4.50.0")
 
 from datetime import datetime
 from pathlib import Path
@@ -174,13 +174,13 @@ with block:
     with gr.Row():
         output_summary = gr.Textbox(label="Output summary")
         output_file = gr.File(label="Output file")
-        
+    
     # Updates to components    
     in_file.upload(fn=gradio.put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_existing])
     in_ref.upload(fn=gradio.put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])      
 
-    in_colnames.change(gradio.dummy_function, in_colnames, None)
-    in_colnames.change(gradio.dummy_function, in_existing, None)
+    #in_colnames.change(gradio.dummy_function, in_colnames, None)
+    #in_colnames.change(gradio.dummy_function, in_existing, None)
     in_colnames.change(gradio.dummy_function, in_refcol, None)
     in_colnames.change(gradio.dummy_function, in_joincol, None)
 

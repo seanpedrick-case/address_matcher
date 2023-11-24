@@ -164,7 +164,7 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         
         return match_results_output, compare_all_candidates, diag_shortlist, diag_best_match
 
-def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address"):
+def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address", resolve_tie_breaks=True):
         '''
         Create a shortlist of the best matches from a list of suggested matches
         '''
@@ -234,18 +234,20 @@ def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, f
         
         ### Dealing with tie breaks ##
         # Do a backup simple Wratio search on the open text to act as a tie breaker when the fuzzy scores are identical
-        def compare_strings_wratio(row, scorer = fuzz.WRatio, fuzzy_col = fuzzy_col):
-            search_score = process.cdist([row[search_mod_address]], [row["reference_mod_address"]], scorer=scorer)
-            return search_score[0][0]
+        if resolve_tie_breaks == True:
+            def compare_strings_wratio(row, scorer = fuzz.WRatio, fuzzy_col = fuzzy_col):
+                search_score = process.cdist([row[search_mod_address]], [row["reference_mod_address"]], scorer=scorer)
+                return search_score[0][0]
 
-        diag_shortlist_dups = diag_shortlist[diag_shortlist['full_number_match'] == True]
-        diag_shortlist_dups = diag_shortlist_dups.loc[diag_shortlist_dups.duplicated(subset= [search_mod_address, 'full_number_match', "room_number_search", fuzzy_col], keep=False)]
-        diag_shortlist_dups["wratio_score"] = diag_shortlist_dups.apply(compare_strings_wratio, axis=1)
-                                
-        diag_shortlist = diag_shortlist.merge(diag_shortlist_dups[["wratio_score"]], left_index=True, right_index=True, how = "left")
-                                
-        # Choose the best match
-        diag_shortlist = diag_shortlist.sort_values([search_mod_address, 'full_number_match', "room_number_search", fuzzy_col, "wratio_score"], ascending = False)
+            diag_shortlist_dups = diag_shortlist[diag_shortlist['full_number_match'] == True]
+            diag_shortlist_dups = diag_shortlist_dups.loc[diag_shortlist_dups.duplicated(subset= [search_mod_address, 'full_number_match', "room_number_search", fuzzy_col], keep=False)]
+            if not diag_shortlist_dups.empty:
+                diag_shortlist_dups["wratio_score"] = diag_shortlist_dups.apply(compare_strings_wratio, axis=1)
+                                    
+                diag_shortlist = diag_shortlist.merge(diag_shortlist_dups[["wratio_score"]], left_index=True, right_index=True, how = "left")
+                                    
+                # Choose the best match
+                diag_shortlist = diag_shortlist.sort_values([search_mod_address, 'full_number_match', "room_number_search", fuzzy_col, "wratio_score"], ascending = False)
 
         return diag_shortlist
 

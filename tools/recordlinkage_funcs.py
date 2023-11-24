@@ -47,7 +47,7 @@ def compute_match(predict_df_search, ref_search, orig_search_df, matching_variab
         print('Running with ' + blocker_column[0] + ' as blocker has created', len(pairsSBM), 'pairs.')
         
         # If no pairs are found, break
-        if len(pairsSBM) == 0: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        if len(pairsSBM) == 0: return pd.DataFrame()
 
         # Call the compare class from the toolkit 
         compareSBM = recordlinkage.Compare()
@@ -212,7 +212,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
     #matched_output_SBM.to_csv("matched_output_SBM_" + str(standardise) + ".csv")
 
     from tools.fuzzy_match import create_diag_shortlist
-    matched_output_SBM = create_diag_shortlist(matched_output_SBM, "search_orig_address", score_cut_off, blocker_column, fuzzy_col='perc_weighted_columns_matched', search_mod_address="address_pred")
+    matched_output_SBM = create_diag_shortlist(matched_output_SBM, "search_orig_address", score_cut_off, blocker_column, fuzzy_col='perc_weighted_columns_matched', search_mod_address="address_pred", resolve_tie_breaks=False)
 
     #matched_output_SBM.to_csv("matched_output_after.csv")
     
@@ -245,6 +245,10 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     
     scoresSBM = compute_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method)   
     
+    if scoresSBM.empty:
+        # If no pairs are found, break
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
     scoresSBM_search = calc_final_nnet_scores(scoresSBM, weights, matching_variables)
 
     # Filter potential matched address scores to those with highest scores only
@@ -252,7 +256,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
     scoresSBM_search_m_j = join_on_pred_ref_details(scoresSBM_search_m, ref_search, predict_df_search)
 
-    scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
+    #scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
 
     # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
     if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)#0.9955)
