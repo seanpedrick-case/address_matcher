@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from typing import TypeVar, Dict, List, Tuple
@@ -6,6 +7,8 @@ import time
 import re
 import math
 from datetime import datetime
+import copy
+import gradio as gr
 
 PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
 PandasSeries = TypeVar('pd.core.frame.Series')
@@ -14,6 +17,11 @@ array = List[str]
 
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
+
+# Constants
+run_match = True
+run_nnet_match = True
+run_standardise = True
 
 # Load in data functions
 
@@ -297,9 +305,91 @@ from tools.model_predict import full_predict_func, predict_torch, torch_predicti
 from tools.recordlinkage_funcs import score_based_match, check_matches_against_fuzzy
 
 
-# # Overarching functions
+# Run batch of matches
+def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()):
+    if run_match == True:
+    
+        overall_tic = time.perf_counter()
+        
+        progress(0, desc= "Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Fuzzy match - non-standardised dataset")
+        df_name = "Fuzzy not standardised"
+                                    
+        ''' FUZZY MATCHING '''
+            
+        ''' Run fuzzy match on non-standardised dataset '''
+        
+        FuzzyNotStdMatch = orchestrate_match_run(Matcher = copy.copy(InitialMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
 
-def run_match(Matcher, standardise = False, nnet = False, file_stub= "not_std_", df_name = "Fuzzy not standardised"):
+        if FuzzyNotStdMatch.abort_flag == True:
+            print("Nothing to match!")
+            return "Nothing to match!", InitialMatch
+
+        FuzzyNotStdMatch = combine_two_matches(InitialMatch, FuzzyNotStdMatch, df_name)
+        
+        if (len(FuzzyNotStdMatch.search_df_not_matched) == 0) | (sum(FuzzyNotStdMatch.match_results_output[FuzzyNotStdMatch.match_results_output['full_match']==False]['fuzzy_score'])==0): 
+            overall_toc = time.perf_counter()
+            time_out = f"The fuzzy match script took {overall_toc - overall_tic:0.1f} seconds"
+            FuzzyNotStdMatch.output_summary = FuzzyNotStdMatch.output_summary + " Neural net match not attempted. "# + time_out
+            return FuzzyNotStdMatch.output_summary, FuzzyNotStdMatch
+    
+        ''' Run fuzzy match on standardised dataset '''
+        
+        progress(.25, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Fuzzy match - standardised dataset")
+        df_name = "Fuzzy standardised"
+        
+        FuzzyStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNotStdMatch), standardise = True, nnet = False, file_stub= "std_", df_name = df_name)
+        FuzzyStdMatch = combine_two_matches(FuzzyNotStdMatch, FuzzyStdMatch, df_name)
+    
+        ''' Continue if reference file in correct format, and neural net model exists. Also if data not too long '''
+        if ((len(FuzzyStdMatch.search_df_not_matched) == 0) | (FuzzyStdMatch.standard_llpg_format == False) |\
+            (os.path.exists(FuzzyStdMatch.model_dir_name + '/saved_model.zip') == False) | (run_nnet_match == False)):
+            overall_toc = time.perf_counter()
+            time_out = f"The fuzzy match script took {overall_toc - overall_tic:0.1f} seconds"
+            FuzzyStdMatch.output_summary = FuzzyStdMatch.output_summary + " Neural net match not attempted. "# + time_out
+            return FuzzyStdMatch.output_summary, FuzzyStdMatch
+
+    if run_nnet_match == True:
+    
+        ''' NEURAL NET '''
+
+        if run_match == False:
+            FuzzyStdMatch = copy.copy(InitialMatch)
+    
+        ''' First on non-standardised addresses '''
+        progress(.50, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Neural net - non-standardised dataset")
+        df_name = "Neural net not standardised"
+        
+        FuzzyNNetNotStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
+        FuzzyNNetNotStdMatch = combine_two_matches(FuzzyStdMatch, FuzzyNNetNotStdMatch, df_name)
+    
+        if (len(FuzzyNNetNotStdMatch.search_df_not_matched) == 0):
+            overall_toc = time.perf_counter()
+            time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
+            FuzzyNNetNotStdMatch.output_summary = FuzzyNNetNotStdMatch.output_summary# + time_out
+            return FuzzyNNetNotStdMatch.output_summary, FuzzyNNetNotStdMatch
+    
+        ''' Next on standardised addresses '''
+        progress(.75, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Neural net - standardised dataset")
+        df_name = "Neural net standardised"
+        
+        FuzzyNNetStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
+        FuzzyNNetStdMatch = combine_two_matches(FuzzyNNetNotStdMatch, FuzzyNNetStdMatch, df_name)
+ 
+        if run_match == False:
+            overall_toc = time.perf_counter()
+            time_out = f"The neural net match script took {overall_toc - overall_tic:0.1f} seconds"
+            FuzzyNNetStdMatch.output_summary = FuzzyNNetStdMatch.output_summary + " Only Neural net match attempted. "# + time_out
+            return FuzzyNNetStdMatch.output_summary, FuzzyNNetStdMatch
+    
+    overall_toc = time.perf_counter()
+    time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
+
+    summary_of_summaries = FuzzyNotStdMatch.output_summary + "\n" + FuzzyStdMatch.output_summary + "\n" + FuzzyNNetStdMatch.output_summary + "\n" + time_out
+
+    return summary_of_summaries, FuzzyNNetStdMatch
+
+# Overarching functions
+def orchestrate_match_run(Matcher, standardise = False, nnet = False, file_stub= "not_std_", df_name = "Fuzzy not standardised"):
 
         today_rev = datetime.now().strftime("%Y%m%d")
         
@@ -377,9 +467,7 @@ def run_match(Matcher, standardise = False, nnet = False, file_stub= "not_std_",
                 return Matcher
             else:
                 Matcher.match_results_output = match_results_output
-                Matcher.predict_df_nnet = predict_df_nnet
-            
-        
+                Matcher.predict_df_nnet = predict_df_nnet 
         
         Matcher.results_on_orig_df = results_on_orig_df
         Matcher.summary = summary
@@ -394,12 +482,8 @@ def run_match(Matcher, standardise = False, nnet = False, file_stub= "not_std_",
     
         return Matcher #summary, output_summary, search_df_not_matched, match_outputs_name, results_orig_df_name 
 
-
-# ## Overarching fuzzy match function
-def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
-                     search_df_key_field, search_address_cols, search_postcode_col,\
-                     fuzzy_match_limit, fuzzy_scorer_used, fuzzy_search_addr_limit = 100,
-                    filter_to_lambeth_pcodes=False, new_join_col=["UPRN"]):
+# Overarching fuzzy match function
+def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_key_field, search_address_cols, search_postcode_col, fuzzy_match_limit, fuzzy_scorer_used, fuzzy_search_addr_limit = 100, filter_to_lambeth_pcodes=False, new_join_col=["UPRN"]):
 
     
     # Break if search item has length 0
@@ -567,7 +651,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols,\
     
     return compare_all_candidates, diag_shortlist, diag_best_match, match_results_output, results_on_orig_df, summary, search_address_cols
 
-# ## Overarching NN function
+# Overarching NN function
 def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
                        search_postcode_col, search_df_key_field, 
                       standardise, exported_model, matching_variables,
@@ -762,21 +846,21 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
 def combine_std_df_remove_dups(df_not_std, df_std, orig_addr_col = "search_orig_address", match_col = "full_match",
                               keep_only_duplicated = False):
 
-    #df_not_std = df_not_std.reset_index(drop=True)
-    #df_std = df_std.reset_index(drop=True)
-
-    #print(df_not_std.index.duplicated().sum())
-    #print(df_std.index.duplicated().sum())
-
-    #df_not_std.to_csv("df_not_std.csv")
-    #df_std.to_csv("df_std.csv")
+    if (df_not_std.empty) & (df_std.empty):
+        return df_not_std
 
     combined_std_not_matches = pd.concat([df_not_std, df_std])#, ignore_index=True)
+
+    if combined_std_not_matches.empty: #| ~(match_col in combined_std_not_matches.columns) | ~(orig_addr_col in combined_std_not_matches.columns):
+        combined_std_not_matches[match_col] = False
+
+        if "full_address" in combined_std_not_matches.columns:
+            combined_std_not_matches[orig_addr_col] = combined_std_not_matches["full_address"]
+        combined_std_not_matches["fuzzy_score"] = 0
+        return combined_std_not_matches
+
     combined_std_not_matches = combined_std_not_matches.sort_values([orig_addr_col, match_col], ascending=False)
 
-                           
-    #combined_std_not_matches = pd.concat([df_not_std, df_std], ignore_index=True).sort_values([orig_addr_col, match_col], ascending = False)
-    
     if keep_only_duplicated == True:
         combined_std_not_matches = combined_std_not_matches[combined_std_not_matches.duplicated(orig_addr_col)]
     
@@ -793,6 +877,10 @@ def combine_two_matches(OrigMatchClass, NewMatchClass, df_name):
         NewMatchClass.pre_filter_search_df = NewMatchClass.results_on_orig_df
         
         # Identify records where the match score was 0
+        #if ~('fuzzy_score' in NewMatchClass.match_results_output.columns):
+        #    NewMatchClass.match_results_output['fuzzy_score'] = 0.0
+        #    return NewMatchClass
+
         match_results_output_match_score_is_0 = NewMatchClass.match_results_output[NewMatchClass.match_results_output['fuzzy_score']==0.0][["index", "fuzzy_score"]]
         match_results_output_match_score_is_0["index"] = match_results_output_match_score_is_0["index"].astype(int)
         #NewMatchClass.results_on_orig_df["index"] = NewMatchClass.results_on_orig_df["index"].astype(str)

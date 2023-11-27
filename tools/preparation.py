@@ -10,7 +10,7 @@ array = List[str]
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
-
+from tools.standardise import extract_postcode, remove_postcode
 
 def prepare_search_address_string(
     search_str: str

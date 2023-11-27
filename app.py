@@ -21,117 +21,84 @@ output_folder = base_folder/"Output/"
 diagnostics_folder = base_folder/"Diagnostics/"
 prep_folder = base_folder/"Helper functions/"
 
-#import tools
 from tools.constants import *
 from tools import matcher_funcs
 from tools import gradio
 
-run_match = True
-run_nnet_match = True
-run_standardise = True
+def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing, InitMatch = InitMatch):  
+    '''
+    Split search and reference data into batches. Loop and run through the match script.
+    '''
 
-def fuzz_match_single(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing, progress=gr.Progress(), InitMatch = InitMatch):  
-    
-    overall_tic = time.perf_counter()
-    
+    overall_tic = time.perf_counter()    
 
-    ''' Load in data '''
+    # Load in initial data
     InitMatch = matcher_funcs.load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing, InitMatch)
 
     if len(InitMatch.search_df) == 0:
         print("Nothing to match!")
-        return "Nothing to match!", [InitMatch.results_orig_df_name, InitMatch.match_outputs_name]
+        return "Nothing to match!", InitMatch
 
-    if run_match == True:
+    # Determine length of search df to create batches to send through the functions.
     
-        #print("starting")
-         
-        progress(0, desc="Fuzzy match - non-standardised dataset")
-        df_name = "Fuzzy not standardised"
+    def create_batch_ranges(dataframe, batch_size=20000):
+        total_rows = dataframe.shape[0]
+        ranges = []
         
+        for start in range(0, total_rows, batch_size):
+            end = min(start + batch_size, total_rows)
+            ranges.append(range(start, end))
         
-            
-        ''' FUZZY MATCHING '''
-            
-        ''' Run fuzzy match on non-standardised dataset '''
-        
-        FuzzyNotStdMatch = matcher_funcs.run_match(Matcher = copy.copy(InitMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
-        #print(FuzzyNotStdMatch.output_summary)
+        return ranges
 
-        if FuzzyNotStdMatch.abort_flag == True:
-            print("Nothing to match!")
-            return "Nothing to match!", [InitMatch.results_orig_df_name, InitMatch.match_outputs_name]
+    batch_ranges = create_batch_ranges(InitMatch.search_df)
 
-        FuzzyNotStdMatch = matcher_funcs.combine_two_matches(InitMatch, FuzzyNotStdMatch, df_name)
-        
-        if (len(FuzzyNotStdMatch.search_df_not_matched) == 0) | (sum(FuzzyNotStdMatch.match_results_output[FuzzyNotStdMatch.match_results_output['full_match']==False]['fuzzy_score'])==0): 
-            overall_toc = time.perf_counter()
-            time_out = f"The fuzzy match script took {overall_toc - overall_tic:0.1f} seconds"
-            FuzzyNotStdMatch.output_summary = FuzzyNotStdMatch.output_summary + " Neural net match not attempted. " + time_out
-            return FuzzyNotStdMatch.output_summary, [FuzzyNotStdMatch.results_orig_df_name, FuzzyNotStdMatch.match_outputs_name]
-    
-    
-        ''' Run fuzzy match on standardised dataset '''
-        
-        progress(.25, desc="Fuzzy match - standardised dataset")
-        df_name = "Fuzzy standardised"
-        
-        FuzzyStdMatch = matcher_funcs.run_match(Matcher = copy.copy(FuzzyNotStdMatch), standardise = True, nnet = False, file_stub= "std_", df_name = df_name)
-        FuzzyStdMatch = matcher_funcs.combine_two_matches(FuzzyNotStdMatch, FuzzyStdMatch, df_name)
-    
-        ''' Continue if reference file in correct format, and neural net model exists. Also if data not too long '''
-        if ((len(FuzzyStdMatch.search_df_not_matched) == 0) | (FuzzyStdMatch.standard_llpg_format == False) |\
-            (os.path.exists(FuzzyStdMatch.model_dir_name + '/saved_model.zip') == False) | (run_nnet_match == False)):
-            overall_toc = time.perf_counter()
-            time_out = f"The fuzzy match script took {overall_toc - overall_tic:0.1f} seconds"
-            FuzzyStdMatch.output_summary = FuzzyStdMatch.output_summary + " Neural net match not attempted. " + time_out
-            return FuzzyStdMatch.output_summary, [FuzzyStdMatch.results_orig_df_name, FuzzyStdMatch.match_outputs_name]
+    print(batch_ranges)
 
-    if run_nnet_match == True:
-    
-        ''' NEURAL NET '''
+    OutputMatch = copy.copy(InitMatch)
 
-        if run_match == False:
-            FuzzyStdMatch = copy.copy(InitMatch)
-        
-    
-        ''' First on non-standardised addresses '''
-        progress(.50, desc="Neural net - non-standardised dataset")
-        df_name = "Neural net not standardised"
-        
-        
-        FuzzyNNetNotStdMatch = matcher_funcs.run_match(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
-        FuzzyNNetNotStdMatch = matcher_funcs.combine_two_matches(FuzzyStdMatch, FuzzyNNetNotStdMatch, df_name)
-        
-    
-        if (len(FuzzyNNetNotStdMatch.search_df_not_matched) == 0):
-            overall_toc = time.perf_counter()
-            time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
-            FuzzyNNetNotStdMatch.output_summary = FuzzyNNetNotStdMatch.output_summary + time_out
-            return FuzzyNNetNotStdMatch.output_summary, [FuzzyNNetNotStdMatch.results_orig_df_name, FuzzyNNetNotStdMatch.match_outputs_name]
-    
-    
-        ''' Next on standardised addresses '''
-        progress(.75, desc="Neural net - standardised dataset")
-        df_name = "Neural net standardised"
-        
-        FuzzyNNetStdMatch = matcher_funcs.run_match(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
-        FuzzyNNetStdMatch = matcher_funcs.combine_two_matches(FuzzyNNetNotStdMatch, FuzzyNNetStdMatch, df_name)
-    
-        #FuzzyNNetStdMatch.match_results_output = matcher_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.match_results_output, FuzzyNNetStdMatch.match_results_output, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field)    
-        #FuzzyNNetStdMatch.results_on_orig_df = matcher_funcs.combine_std_df_remove_dups(FuzzyNNetNotStdMatch.results_on_orig_df, FuzzyNNetStdMatch.results_on_orig_df, orig_addr_col = FuzzyNNetStdMatch.search_df_key_field, match_col = 'Matched with ref record')
+    for n, row_range in enumerate(batch_ranges):
+        print("Running batch ", str(n+1))
 
-        if run_match ==  False:
-            overall_toc = time.perf_counter()
-            time_out = f"The neural net match script took {overall_toc - overall_tic:0.1f} seconds"
-            FuzzyNNetStdMatch.output_summary = FuzzyNNetStdMatch.output_summary + " Only Neural net match attempted. " + time_out
-            return FuzzyNNetStdMatch.output_summary, [FuzzyNNetStdMatch.results_orig_df_name, FuzzyNNetStdMatch.match_outputs_name]
+        BatchMatch = copy.copy(InitMatch)
+        BatchMatch.search_df = BatchMatch.search_df.iloc[row_range]
+        BatchMatch.search_df.to_csv("BatchMatch_search_df_batch_" + str(n+1) + ".csv")
+
+        BatchMatch.search_df_not_matched = BatchMatch.search_df_not_matched.iloc[row_range]
+        BatchMatch.search_df_not_matched.to_csv("BatchMatch_search_df_not_matched_batch_" + str(n+1) + ".csv")
+
+        # TURN ALL THE BELOW INTO A FUNCTION AND RUN THROUGH THE LOOP
+        summary_of_summaries, BatchMatch_out = matcher_funcs.run_match_batch(BatchMatch, n, len(batch_ranges))
+
+        OutputMatch = matcher_funcs.combine_two_matches(OutputMatch, BatchMatch_out, "All up to and including batch " + str(n+1))
+
     
     overall_toc = time.perf_counter()
-    time_out = f"The whole match script took {overall_toc - overall_tic:0.1f} seconds"
-    summary_of_summaries = FuzzyNotStdMatch.output_summary + "\n" + FuzzyStdMatch.output_summary + "\n" + FuzzyNNetStdMatch.output_summary + "\n" + time_out
-    
-    return summary_of_summaries, [FuzzyNNetStdMatch.results_orig_df_name, FuzzyNNetStdMatch.match_outputs_name]
+    time_out = f"The overall match (all batches) took {overall_toc - overall_tic:0.1f} seconds"
+
+    print(OutputMatch.output_summary)
+
+    if OutputMatch.output_summary == "":
+        OutputMatch.output_summary = "No matches were found."
+
+    fuzzy_not_std_output = OutputMatch.match_results_output.copy()
+    fuzzy_not_std_output_mask = ~(fuzzy_not_std_output["match_method"].str.contains("Fuzzy match")) | (fuzzy_not_std_output["standardised_address"] == True)
+    fuzzy_not_std_output.loc[fuzzy_not_std_output_mask, "full_match"] = False
+    fuzzy_not_std_summary = matcher_funcs.create_match_summary(fuzzy_not_std_output, "Fuzzy not standardised")
+
+    fuzzy_std_output = OutputMatch.match_results_output.copy()
+    fuzzy_std_output_mask = fuzzy_std_output["match_method"].str.contains("Fuzzy match")
+    fuzzy_std_output.loc[fuzzy_std_output_mask == False, "full_match"] = False
+    fuzzy_std_summary = matcher_funcs.create_match_summary(fuzzy_std_output, "Fuzzy standardised")
+
+    nnet_std_output = OutputMatch.match_results_output.copy()
+    nnet_std_summary = matcher_funcs.create_match_summary(nnet_std_output, "Neural net standardised")
+
+
+    final_summary = fuzzy_not_std_summary + "\n" + fuzzy_std_summary + "\n" + nnet_std_summary + "\n" + time_out
+
+
+    return final_summary, [OutputMatch.results_orig_df_name, OutputMatch.match_outputs_name]
 
 ''' Create the gradio interface '''
 
@@ -181,10 +148,10 @@ with block:
 
     #in_colnames.change(gradio.dummy_function, in_colnames, None)
     #in_colnames.change(gradio.dummy_function, in_existing, None)
-    in_colnames.change(gradio.dummy_function, in_refcol, None)
-    in_colnames.change(gradio.dummy_function, in_joincol, None)
+    #in_colnames.change(gradio.dummy_function, in_refcol, None)
+    #in_colnames.change(gradio.dummy_function, in_joincol, None)
 
-    match_btn.click(fn=fuzz_match_single, inputs=[in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing],
+    match_btn.click(fn=run_matcher, inputs=[in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing],
                     outputs=[output_summary, output_file], api_name="address")
     
 block.queue().launch(debug=True)

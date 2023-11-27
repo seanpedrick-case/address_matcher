@@ -33,10 +33,6 @@ dataset_name = "ctax" + std
     
 suffix_used = dataset_name + "_" + fuzzy_scorer_used
 
-# + [markdown] jp-MarkdownHeadingCollapsed=true tags=[]
-# ## Neural net variables and models
-
-# +
 # https://stackoverflow.com/questions/59221557/tensorflow-v2-replacement-for-tf-contrib-predictor-from-saved-model
 
 ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
@@ -325,14 +321,14 @@ class MatcherClass:
         self.diag_shortlist = []
         self.diag_best_match = []
         
-        self.results_on_orig_df = []
-        self.summary = []
+        self.results_on_orig_df = pd.DataFrame()
+        self.summary = ""
         self.search_address_cols = []
-        self.output_summary = []
+        self.output_summary = ""
         self.search_df_not_matched = []
         
-        self.match_outputs_name = []
-        self.results_orig_df_name = []
+        self.match_outputs_name = ""
+        self.results_orig_df_name = ""
 
         # Abort flag if the matcher couldn't even get the results of the first match
         self.abort_flag = False
