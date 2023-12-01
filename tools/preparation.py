@@ -48,8 +48,6 @@ def prepare_search_address_string(
 
     return search_df_out, key_field, address_cols, postcode_col
 
-
-# +
 def prepare_search_address(
     search_df: pd.DataFrame, 
     address_cols: list,
@@ -133,8 +131,6 @@ def _ensure_index(df, index_col):
 
    return df
 
-# -
-
 def create_full_address(df):
 
     df = df.fillna("")
@@ -162,7 +158,6 @@ def create_full_address(df):
     #df.to_csv("ref_fulladdress_out.csv")
     
     return df["full_address"]
-
 
 def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard_cols = True):
     #, cols = ['SaoText','SaoStartNumber','SaoStartSuffix','SaoEndNumber','SaoEndSuffix','PaoText','PaoStartNumber',

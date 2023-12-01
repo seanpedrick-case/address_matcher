@@ -30,7 +30,6 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     # Filter out records where 'Excluded from search' is not a postal address by making the postcode blank
     search_df.loc[search_df['Excluded from search'] == "Excluded - non-postal address", 'postcode_search'] = ""
 
-    
     #assert not ref_df['Postcode'].isna().any() , "nulls in ref_df subset post code"
     # Remove nulls from ref postcode
     ref_df = ref_df[ref_df['Postcode'].notna()]
@@ -69,7 +68,6 @@ def standardise_wrapper_func(search_df:PandasDataFrame, ref_df:PandasDataFrame,\
     ref_df_match_list = ref_join.copy().set_index('postcode_search')['ref_address_stand'].str.lower().str.strip()
     
     return search_df_join, ref_join, search_df_match_list, ref_df_match_list, search_df_stand_col, ref_df_stand_col
-
 
 def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bool = True, out_london = True) -> PandasDataFrame:
     
@@ -120,10 +118,6 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     
     df_copy['add_no_pcode'] = remove_postcode(df_copy, col)
     
-    #df_copy[col].str.upper().str.replace(\
-   # "\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2}|GIR ?0A{2})\\b$|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$|\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$",""\
-    #                                                           ).str.lower()
-    
     if out_london == False:
         df_copy['add_no_pcode'] = df_copy['add_no_pcode'].str.replace("london","").str.replace(r",,|, ,","", regex=True)
     
@@ -156,30 +150,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
                                                 str.replace(r"\bbst\b","basement", regex=True).\
                                                 str.replace(r"\bbsmt\b","basement", regex=True)
         
-    
-        # Remove the word flat or apartment from addresses that have only one number in it. 'Flat' will be re-added later to relevant addresses 
-        # that need it (replace_floor_flat)
-        df_copy['flat_removed'] = remove_flat_one_number_address(df_copy, 'add_no_pcode')
-    
-    
-        ''' Remove 'flat' from any address that contains 'house' or 'court'
-         From the df_copy address, remove the word 'flat' from any address that contains the word 'house' or 'court'
-         This is because in the housing list, these addresses never have the word flat in front of them
-        '''
-        remove_flat_house = df_copy['flat_removed'].str.lower().str.contains(r"\bhouse\b")#(?=\bhouse\b)(?!.*house road)")
-        remove_flat_court = df_copy['flat_removed'].str.lower().str.contains(r"\bcourt\b")#(?=\bcourt\b)(?!.*court road)")
-        remove_flat_terrace = df_copy['flat_removed'].str.lower().str.contains(r"\bterrace\b")#(?=\bterrace\b)(?!.*terrace road)")
-        remove_flat_house_or_court = (remove_flat_house | remove_flat_court | remove_flat_terrace == 1)
-
-        df_copy['remove_flat_house_or_court'] = remove_flat_house_or_court
-        df_copy['house_court_replacement'] = "flat " + df_copy[df_copy['remove_flat_house_or_court'] == True]['flat_removed'].str.replace(r"\bflat\b","", regex=True\
-                                                                                                                                         ).str.strip().map(str)       
-        #df_copy["add_no_pcode_house"] = merge_columns(df_copy, "add_no_pcode_house", 'flat_removed', "house_court_replacement")
-
-        #merge_columns(df, "new_col", col1, 'letter_after_number')
-        df_copy["add_no_pcode_house"] = merge_series(df_copy['flat_removed'], df_copy["house_court_replacement"])
-
-        #df_copy["add_no_pcode_house"] = df_copy['flat_removed'].fillna(df_copy['house_court_replacement'])
+        df_copy["add_no_pcode_house"] = move_flat_house_court(df_copy)
     
         # Replace any addresses that don't have a space between the comma and the next word. and double spaces # df_copy['add_no_pcode_house']
         df_copy['add_no_pcode_house_comma'] = df_copy['add_no_pcode_house'].str.replace(r',(\w)', r', \1', regex=True).str.replace('  ', ' ', regex=False)
@@ -193,12 +164,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
         df_copy['floor_replacement'] = replace_floor_flat(df_copy, 'add_no_pcode_house_comma_no')
         df_copy['flat_added_to_start_addresses_begin_letter'] = add_flat_addresses_start_with_letter(df_copy, 'floor_replacement')
 
-        #merge_columns(df, "new_col", col1, 'letter_after_number')
-        #df["new_col"] = merge_series(df[col1], df['letter_after_number'])
-
-        #df_copy[out_col] = merge_columns(df_copy, out_col, 'add_no_pcode_house_comma_no', 'flat_added_to_start_addresses_begin_letter')
         df_copy[out_col] = merge_series(df_copy['add_no_pcode_house_comma_no'], df_copy['flat_added_to_start_addresses_begin_letter'])
-        
 
         # Write stuff back to the original df
         df[out_col] = df_copy[out_col]
@@ -207,28 +173,54 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
         df_copy[out_col] = df_copy['add_no_pcode']
         df[out_col] = df_copy['add_no_pcode']
         
+    # Remove trailing spaces
     df[out_col] = df[out_col].str.strip()
     
     # Pull out property, flat, and room numbers from the address text
     df['property_number'] = extract_prop_no(df_copy, out_col)
-    
-    #try:    
-    df[['prop_number','flat_number', 'apart_number','first_sec_number', 'first_letter_flat_number', 'block_number']] = extract_flat_no(df_copy, out_col)
 
+    # Extract flat, apartment, block, unit numbers
+    df = extract_flat_and_other_no(df, out_col)
 
-    df_copy['flat_number'] = merge_series(df['flat_number'], df['apart_number'])
-    df_copy['flat_number'] = merge_series(df['flat_number'], df['prop_number'])
-    df_copy['flat_number'] = merge_series(df['flat_number'], df['first_sec_number'])
-    df_copy['flat_number'] = merge_series(df['flat_number'], df['first_letter_flat_number'])
-            
-    df_copy['block_number'] = df['block_number']
+    df['flat_number'] = merge_series(df['flat_number'], df['apart_number'])
+    df['flat_number'] = merge_series(df['flat_number'], df['prop_number'])
+    df['flat_number'] = merge_series(df['flat_number'], df['first_sec_number'])
+    df['flat_number'] = merge_series(df['flat_number'], df['first_letter_flat_number'])
     
-    df['room_number'] = extract_room_no(df_copy, out_col)
+    # Extract room numbers
+    df['room_number'] = extract_room_no(df, out_col)
 
-    #df_copy['room_number'] = extract_room_no(df, out_col)
-    
+    # Extract house or court name
+    df['house_court_name'] = extract_house_or_court_name(df, out_col)
+
     return df, df[out_col]
-    #df_copy, df_copy[out_col]
+
+def move_flat_house_court(df_copy):
+            ''' Remove 'flat' from any address that contains 'house' or 'court'
+            From the df_copy address, remove the word 'flat' from any address that contains the word 'house' or 'court'
+            This is because in the housing list, these addresses never have the word flat in front of them
+            '''
+            
+            # Remove the word flat or apartment from addresses that have only one number in it. 'Flat' will be re-added later to relevant addresses 
+            # that need it (replace_floor_flat)
+            df_copy['flat_removed'] = remove_flat_one_number_address(df_copy, 'add_no_pcode')
+        
+        
+            
+            remove_flat_house = df_copy['flat_removed'].str.lower().str.contains(r"\bhouse\b")#(?=\bhouse\b)(?!.*house road)")
+            remove_flat_court = df_copy['flat_removed'].str.lower().str.contains(r"\bcourt\b")#(?=\bcourt\b)(?!.*court road)")
+            remove_flat_terrace = df_copy['flat_removed'].str.lower().str.contains(r"\bterrace\b")#(?=\bterrace\b)(?!.*terrace road)")
+            remove_flat_house_or_court = (remove_flat_house | remove_flat_court | remove_flat_terrace == 1)
+
+            df_copy['remove_flat_house_or_court'] = remove_flat_house_or_court
+            df_copy['house_court_replacement'] = "flat " + df_copy[df_copy['remove_flat_house_or_court'] == True]['flat_removed'].str.replace(r"\bflat\b","", regex=True\
+                                                                                                                                            ).str.strip().map(str)       
+            #df_copy["add_no_pcode_house"] = merge_columns(df_copy, "add_no_pcode_house", 'flat_removed', "house_court_replacement")
+
+            #merge_columns(df, "new_col", col1, 'letter_after_number')
+            df_copy["add_no_pcode_house"] = merge_series(df_copy['flat_removed'], df_copy["house_court_replacement"])
+
+            return df_copy["add_no_pcode_house"]
 
 def extract_street_name(address:str) -> str:
     """
@@ -299,7 +291,6 @@ def extract_street_name(address:str) -> str:
     else:
         return ""
 
-
 def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
 
     '''
@@ -341,7 +332,6 @@ def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> Pan
     
     return df['new_col']
 
-
 def add_flat_addresses_start_with_letter(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     df['contains_single_letter_at_start_before_number'] = df[col1].str.lower().str.contains(r'^\b[A-Za-z]\b[^\d]* \d', regex = True)
 
@@ -353,7 +343,6 @@ def add_flat_addresses_start_with_letter(df:PandasDataFrame, col1:PandasSeries) 
     
     
     return df['new_col']
-
 
 def extract_letter_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
@@ -402,11 +391,10 @@ def extract_letter_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> 
     
     return df['new_col']
 
-
 def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     ''' In references to basement, ground floor, first floor, second floor, and top floor
     flats, this function moves the word 'flat' to the front of the address. This is so that the
-    following word (e.g. basement, ground floor) is recognised as the flat number in the 'extract_flat_no' function
+    following word (e.g. basement, ground floor) is recognised as the flat number in the 'extract_flat_and_other_no' function
     '''
     
     df['letter_after_number'] = extract_letter_one_number_address(df, col1)
@@ -490,7 +478,6 @@ def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     
     return df['new_col']
 
-
 def remove_non_housing(df:PandasDataFrame, col1:PandasSeries) -> PandasDataFrame:
     '''
     Remove items from the housing list that are not housing. Includes addresses including
@@ -501,7 +488,6 @@ def remove_non_housing(df:PandasDataFrame, col1:PandasSeries) -> PandasDataFrame
     r"parking|garage|\bstore\b|\bstores\b|\bvisitor bay\b|visitors room|\bbike rack\b|\byard\b|\bworkshop\b")]
                                                                  
     return df_copy
-
 
 def extract_prop_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
@@ -519,7 +505,6 @@ def extract_prop_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
         
     return prop_no
 
-
 def extract_room_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
     Extract room number from an address. Find rows where the address contains 'room', then extract
@@ -534,8 +519,7 @@ def extract_room_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
         
     return room_no
 
-
-def extract_flat_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+def extract_flat_and_other_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
     Extract flat number from an address. 
     It looks for letters after a property number IF THERE ARE NO MORE NUMBERS IN THE STRING,
@@ -543,19 +527,59 @@ def extract_flat_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     the last regex selects all characters in a word containing a digit if there are two numbers in the address
     # ^\d+([a-z]|[A-Z])
     '''  
-    try:
-        replaced_series = df[df[col1].str.lower().str.replace(r"^\bflats\b","flat", regex=True).str.contains(\
-              r"^\d+([a-z]|[A-Z])(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
-             "no.","", regex=True)
-        
-        flat_no = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)|flat (\w+)|apartment (\w+)|(\d+.*?)[^a-zA-Z0-9_].*?\d+|\b([A-Za-z])\b[^\d]* \d|\bblock\b (\w+)'\
-                                                                          ).rename(columns = {0:"prop_number", 1:"flat_number",2:"apart_number",3:"first_sec_number",4:"first_letter_flat_number", 5:"block_number"})
-    except:
-       
-        flat_no = np.nan
-        
-    return flat_no
+    
+    replaced_series = df[df[col1].str.lower().str.replace(r"^\bflats\b","flat", regex=True).str.contains(\
+            r"^\d+([a-z]|[A-Z])(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
+            "no.","", regex=True)
 
+    replaced_series = replaced_series#.str.lower()
+       
+    df_out = df
+
+    df_out["prop_number"] = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)')
+
+    extracted_series = replaced_series.str.extract(r'(?i)(?:flat|flats) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["flat_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["flat_number"] = extracted_series[0]
+
+    extracted_series = replaced_series.str.extract(r'(?i)(?:apartment|apartments) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["apart_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["apart_number"] = extracted_series[0]
+    
+    df_out["first_sec_number"] = replaced_series.str.extract(r'(\d+.*?)[^a-zA-Z0-9_].*?\d+')
+    df_out["first_letter_flat_number"] = replaced_series.str.extract(r'\b([A-Za-z])\b[^\d]* \d')
+
+    extracted_series = replaced_series.str.extract(r'(?i)(?:block|blocks) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["block_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["block_number"] = extracted_series[0]
+
+    extracted_series = replaced_series.str.extract(r'(?i)(?:unit|units) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["unit_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["unit_number"] = extracted_series[0]
+
+    #print(df_out)
+        
+    return df_out
+
+def extract_house_or_court_name(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+    '''
+    Extract house or court name
+    '''
+    extracted_series = df[col1].str.extract(r"(\w+)\s+(house|court)")
+    if 1 in  extracted_series.columns:  
+        df["house_court_name"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df["house_court_name"] = extracted_series[0]
+
+    return df["house_court_name"]
 
 def extract_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     '''
@@ -565,7 +589,6 @@ def extract_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     "(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2})|((GIR ?0A{2})\\b$)|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$)|(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$)")
     
     return postcode_series
-
 
 def remove_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     '''
@@ -588,20 +611,19 @@ def remove_non_postal(df, in_address_series):
     '''
     df["in_address_series_temp"] = df[in_address_series].str.lower()
 
-    garage_address_series = df["in_address_series_temp"].str.contains("\\bgarage\\b", regex=True)
+    garage_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bgarage\\b|\\bgarages\\b)", regex=True)
     parking_address_series = df["in_address_series_temp"].str.contains("\\bparking\\b", regex=True)
-    shed_address_series = df["in_address_series_temp"].str.contains("\\bshed\\b", regex=True)
-    bike_address_series = df["in_address_series_temp"].str.contains("\\bbike\\b", regex=True)
-    bicycle_store_address_series = df["in_address_series_temp"].str.contains("\\bbicycle store\\b", regex=True)
+    shed_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bshed\\b|\\bsheds\\b)", regex=True)
+    bike_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbike\\b|\\bbikes\\b)", regex=True)
+    bicycle_store_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbicycle store\\b|\\bbicycle store\\b)", regex=True)
 
     non_postal_series = (garage_address_series | parking_address_series | shed_address_series | bike_address_series | bicycle_store_address_series)
     
     df.loc[non_postal_series == True, 'Excluded from search'] = "Excluded - non-postal address"
-    
+
     df = df.drop("in_address_series_temp", axis = 1)
 
     return df
-
 
 def replace_mistaken_dates(df:PandasDataFrame, col:str) -> PandasSeries:
     '''

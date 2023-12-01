@@ -180,7 +180,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
     scoresSBM_best['reference_mod_address'] = (scoresSBM_best_ref_cols.agg(' '.join, axis=1)).str.strip().str.replace("  ", " ").str.replace("  ", " ").str.replace("  ", " ")
 
     ## Create matched output df
-    matched_output_SBM = orig_search_df[[search_df_key_field, "full_address", "postcode", "property_number", "prop_number",	"flat_number",	"apart_number",	"block_number",	"room_number"]].replace(r"\bnan\b", "", regex=True)
+    matched_output_SBM = orig_search_df[[search_df_key_field, "full_address", "postcode", "property_number", "prop_number",	"flat_number",	"apart_number",	"block_number",	'unit_number', "room_number", "house_court_name"]].replace(r"\bnan\b", "", regex=True)
     matched_output_SBM[search_df_key_field] = matched_output_SBM[search_df_key_field].astype(str)
 
     ###
@@ -190,7 +190,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
     
     #ref_search.to_csv("ref_search.csv")
 
-    matched_output_SBM = matched_output_SBM.merge(ref_search[["fulladdress", "Postcode", "property_number", "prop_number", "flat_number",	"apart_number",	"block_number",	"room_number", "ref_address_stand"]], left_on = "address_ref", right_on = "fulladdress", how = "left", suffixes=('_search', '_reference')).rename(columns={"fulladdress":"reference_orig_address", "ref_address_stand":"reference_list_address"})
+    matched_output_SBM = matched_output_SBM.merge(ref_search.drop_duplicates("fulladdress")[["fulladdress", "Postcode", "property_number", "prop_number", "flat_number", "apart_number", "block_number", 'unit_number', "room_number", "house_court_name", "ref_address_stand"]], left_on = "address_ref", right_on = "fulladdress", how = "left", suffixes=('_search', '_reference')).rename(columns={"fulladdress":"reference_orig_address", "ref_address_stand":"reference_list_address"})
 
    # matched_output_SBM.to_csv("matched_output_SBM_" + str(standardise) + ".csv")
 
@@ -207,7 +207,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
 
     matched_output_SBM_b = scoresSBM_best[scores_SBM_best_cols]
 
-    matched_output_SBM = matched_output_SBM.merge(matched_output_SBM_b, on = search_df_key_field,  how = "left")
+    matched_output_SBM = matched_output_SBM.merge(matched_output_SBM_b.drop_duplicates(search_df_key_field), on = search_df_key_field,  how = "left")
 
     #matched_output_SBM.to_csv("matched_output_SBM_" + str(standardise) + ".csv")
 
@@ -224,10 +224,29 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
         #"address_ref":"reference_orig_address",
         #"full_match_score_based":"fuzzy_score_match",                        
         'perc_weighted_columns_matched':"fuzzy_score"})
+    
+    matched_output_SBM_cols = [search_df_key_field, 'search_orig_address','reference_orig_address',
+        'full_match',
+        'full_number_match',
+        'flat_number_match',
+        'room_number_match',
+        'block_number_match',
+        'property_number_match',
+        'close_postcode_match',
+        'house_court_name_match',
+        'fuzzy_score_match',
+        "fuzzy_score", 
+        'property_number_search', 'property_number_reference',  
+        'flat_number_search', 'flat_number_reference', 
+        'room_number_search', 'room_number_reference',
+        'block_number_search', 'block_number_reference',
+        "unit_number_search","unit_number_reference",
+        'house_court_name_search', 'house_court_name_reference',
+        "search_mod_address", 'reference_mod_address','Postcode', 'Reference file']
 
-    matched_output_SBM_cols = [search_df_key_field, 'search_orig_address', 'reference_orig_address',
-    'full_match', 'fuzzy_score_match', 'full_number_match', 
-    'fuzzy_score', 'search_mod_address', 'reference_mod_address', 'Reference file']
+    #matched_output_SBM_cols = [search_df_key_field, 'search_orig_address', 'reference_orig_address',
+    #'full_match', 'fuzzy_score_match', 'property_number_match', 'full_number_match', 
+    #'fuzzy_score', 'search_mod_address', 'reference_mod_address', 'Reference file']
     
     matched_output_SBM_cols.extend(new_join_col)
     matched_output_SBM_cols.extend(['standardised_address'])
@@ -235,9 +254,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
     
     matched_output_SBM = matched_output_SBM.sort_values(search_df_key_field, ascending=True)
 
-
     #matched_output_SBM.to_csv("matched_output_SBM_out.csv")
-
 
     return matched_output_SBM
 

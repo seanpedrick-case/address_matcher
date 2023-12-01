@@ -296,7 +296,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
 # # DF preparation functions
 
 from tools.preparation import prepare_search_address_string, prepare_search_address, _clean_columns, _join_address, _add_postcode_column, _ensure_index, create_full_address, prepare_ref_address
-from tools.standardise import standardise_wrapper_func, standardise_address, extract_street_name, remove_flat_one_number_address, add_flat_addresses_start_with_letter, extract_letter_one_number_address, replace_floor_flat, remove_non_housing, extract_prop_no,extract_room_no, extract_flat_no, extract_postcode, remove_postcode, replace_mistaken_dates, merge_series, remove_non_postal, clean_cols
+from tools.standardise import standardise_wrapper_func, standardise_address, extract_street_name, remove_flat_one_number_address, add_flat_addresses_start_with_letter, extract_letter_one_number_address, replace_floor_flat, remove_non_housing, extract_prop_no,extract_room_no, extract_flat_and_other_no, extract_postcode, remove_postcode, replace_mistaken_dates, merge_series, remove_non_postal, clean_cols
 from tools.fuzzy_match import string_match_array, string_match_by_post_code_multiple, _create_fuzzy_match_results_output, refine_export_results, create_diag_shortlist, create_fuzzy_matched_col, join_to_orig_df
 
 # Neural network functions
@@ -311,7 +311,7 @@ def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()
     
         overall_tic = time.perf_counter()
         
-        progress(0, desc= "Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Fuzzy match - non-standardised dataset")
+        progress(0, desc= "Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Fuzzy match - non-standardised dataset")
         df_name = "Fuzzy not standardised"
                                     
         ''' FUZZY MATCHING '''
@@ -334,7 +334,7 @@ def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()
     
         ''' Run fuzzy match on standardised dataset '''
         
-        progress(.25, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Fuzzy match - standardised dataset")
+        progress(.25, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Fuzzy match - standardised dataset")
         df_name = "Fuzzy standardised"
         
         FuzzyStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNotStdMatch), standardise = True, nnet = False, file_stub= "std_", df_name = df_name)
@@ -356,7 +356,7 @@ def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()
             FuzzyStdMatch = copy.copy(InitialMatch)
     
         ''' First on non-standardised addresses '''
-        progress(.50, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Neural net - non-standardised dataset")
+        progress(.50, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Neural net - non-standardised dataset")
         df_name = "Neural net not standardised"
         
         FuzzyNNetNotStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
@@ -504,7 +504,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
 
     if type(search_df) == str: search_df_prep, search_df_key_field, search_address_cols = prepare_search_address_string(search_df)
     else: search_df_prep, search_df_key_field = prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field)
-      
+
     search_df_prep = remove_non_postal(search_df_prep, "full_address")
 
     #ref.to_csv("ref.csv")
@@ -555,8 +555,7 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
     # Create result dfs
     #ref_df.to_csv("ref_df_before_fuzzy_output.csv")
 
-    match_results_output, compare_all_candidates, diag_shortlist, diag_best_match = _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join,\
-                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Postcode")
+    match_results_output, compare_all_candidates, diag_shortlist, diag_best_match = _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join, fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Postcode")
     
     match_results_output['match_method'] = "Fuzzy match - postcode"
     
@@ -576,23 +575,21 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
         return compare_all_candidates, diag_shortlist, diag_best_match,\
         match_results_output, results_on_orig_df, summary, search_address_cols
     
-    
-    
     # RUN WITH STREET AS A BLOCKER #
     
     ### Redo with street as blocker
     search_df_prep_join_street = search_df_not_matched.copy() #search_df_prep_join.copy()
     search_df_prep_join_street['search_address_stand_w_pcode'] = search_df_prep_join_street['search_address_stand'] + " " + search_df_prep_join_street['postcode_search']
-    
-    search_df_prep_join_street['street']= search_df_prep_join_street['full_address_search'].apply(extract_street_name)       
     ref_join['ref_address_stand_w_pcode'] = ref_join['ref_address_stand'] + " " + ref_join['postcode_search']
         
+    search_df_prep_join_street['street']= search_df_prep_join_street['full_address_search'].apply(extract_street_name)
+    # Exclude non-postal addresses from street-blocked search
+    search_df_prep_join_street.loc[search_df_prep_join_street['Excluded from search'] == "Excluded - non-postal address", 'street'] = ""
         
     ### Create lookup lists
     search_df_match_list_street = search_df_prep_join_street.set_index('street')['search_address_stand'].str.lower().str.strip() # 'search_address_stand'
     ref_df_match_list_street = ref_join.copy().set_index('Street')['ref_address_stand'].str.lower().str.strip() # 'ref_address_stand'
         
-    
     # Remove rows where street is not in ref df
     index_check = ref_df_match_list_street.index.isin(search_df_match_list_street.index)
     ref_df_match_list_street = ref_df_match_list_street[index_check == True]
@@ -625,30 +622,21 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
     print(f"Performed the fuzzy match in {toc - tic:0.1f} seconds")
     
     match_results_output_st, compare_all_candidates_st, diag_shortlist_st, diag_best_match_st = _create_fuzzy_match_results_output(results_st, search_df_prep_join_street, ref_df, ref_join,\
-                                                                                                 fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Street")
-    
+    fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Street")
     match_results_output_st['match_method'] = "Fuzzy match - street"
 
-    
     match_results_output_st_out = combine_std_df_remove_dups(match_results_output, match_results_output_st, orig_addr_col = search_df_key_field)
         
     match_results_output = match_results_output_st_out
     
-    
     summary = create_match_summary(match_results_output, df_name)
-    #print(summary)
-    #print(match_results_output['match_method'].value_counts())
-    
-    
+
     ### Join URPN back onto orig df
 
     if type(search_df) != str:
         results_on_orig_df = join_to_orig_df(match_results_output, search_df, search_df_key_field, new_join_col)
     else: results_on_orig_df = match_results_output
-    
-
-
-    
+        
     return compare_all_candidates, diag_shortlist, diag_best_match, match_results_output, results_on_orig_df, summary, search_address_cols
 
 # Overarching NN function
@@ -878,7 +866,7 @@ def combine_two_matches(OrigMatchClass, NewMatchClass, df_name):
         
         # Identify records where the match score was 0
         #if ~('fuzzy_score' in NewMatchClass.match_results_output.columns):
-        #    NewMatchClass.match_results_output['fuzzy_score'] = 0.0
+        #    NewMatchClass.match_results_output['fuzzy_score'] = pd.NA
         #    return NewMatchClass
 
         match_results_output_match_score_is_0 = NewMatchClass.match_results_output[NewMatchClass.match_results_output['fuzzy_score']==0.0][["index", "fuzzy_score"]]
@@ -932,10 +920,10 @@ def create_match_summary(match_results_output, df_name):
     match_rate = str(round((full_match_count / dataset_length) * 100,1))
     match_fail_count_without_excluded = match_fail_count - records_not_attempted
     match_fail_rate = str(round(((match_fail_count_without_excluded) / dataset_length) * 100,1))
-    not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,2))
+    not_attempted_rate = str(round((records_not_attempted / dataset_length) * 100,1))
 
     summary = ("For the " + df_name + " dataset (" + str(dataset_length) + " records), the fuzzy matching algorithm successfully matched " + str(full_match_count) +
-               " records (" + match_rate + "%). The algorithm had no success with matching " + str(records_not_attempted) +
-               " records (" + not_attempted_rate +  "%). There are " + str(match_fail_count_without_excluded) + " records left with more potential to match.")
+               " records (" + match_rate + "%). The algorithm had no success matching " + str(records_not_attempted) +
+               " records (" + not_attempted_rate +  "%). There are " + str(match_fail_count_without_excluded) + " records left to potentially match.")
     
     return summary

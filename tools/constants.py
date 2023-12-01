@@ -60,7 +60,6 @@ device = "cpu"
 global labels_list
 labels_list = []
 
-
 model_dir_name = os.path.join(ROOT_DIR, "nnet_model" , model_stub , model_version)
 print(model_dir_name)
 
@@ -74,7 +73,6 @@ if os.path.exists(model_path):
     device = "cpu"
         
     import tensorflow as tf
-    import recordlinkage
 
     tf.config.list_physical_devices('GPU')
 
@@ -117,10 +115,7 @@ if os.path.exists(model_path):
         'AdministrativeArea', #13
         'Postcode'  # 14
         ]
-        
-        
-        
-
+     
     elif "pytorch" in model_stub:
         
         labels_list = [
@@ -206,7 +201,6 @@ import pandas as pd
 
 fuzzy_method = "jarowinkler"
 
-# +
 ''' Required overall match score for all columns to count as a match '''
 
 score_cut_off = 97.5 #98.7
@@ -215,29 +209,21 @@ score_cut_off = 97.5 #98.7
 score_cut_off_nnet_street = score_cut_off # 99.238
 #score_cut_off = 97.5
 
-# -
-
 ref_address_cols = ["SaoStartNumber", "SaoStartSuffix", "SaoEndNumber", "SaoEndSuffix",
        "SaoText", "PaoStartNumber", "PaoStartSuffix", "PaoEndNumber",
        "PaoEndSuffix", "PaoText", "Street", "PostTown", "Postcode"]
 
-# +
 # Create a list of matching variables. 
-
 matching_variables = ref_address_cols
 text_columns = ["PaoText", "Street", "PostTown", "Postcode"]
-# -
 
-# ### Modify relative importance of columns (weights)
-
-# +
-''' Modify weighting for scores - Town and AdministrativeArea are not very important as we have postcode. Street number and name are important '''
+# Modify relative importance of columns (weights). Modify weighting for scores - Town and AdministrativeArea are not very important as we have postcode. Street number and name are important
 
 PaoStartNumber_weight = 2
 SaoStartNumber_weight = 2
 Street_weight = 2
 PostTown_weight = 0
-Postcode_weight = 1
+Postcode_weight = 0.5
 AdministrativeArea_weight = 0
 # -
 
@@ -253,9 +239,6 @@ weights["PaoStartNumber"] = PaoStartNumber_weight
 weights["Street"] = Street_weight
 weights["PostTown"] = PostTown_weight
 weights["Postcode"] = Postcode_weight
-
-
-# -
 
 class MatcherClass:
     def __init__(self, 
@@ -332,8 +315,7 @@ class MatcherClass:
 
         # Abort flag if the matcher couldn't even get the results of the first match
         self.abort_flag = False
-
-    
+ 
 InitMatch = MatcherClass(
                 fuzzy_scorer_used, fuzzy_match_limit, fuzzy_search_addr_limit, filter_to_lambeth_pcodes, standardise, suffix_used,
                 matching_variables, model_dir_name, file_step_suffix, exported_model, fuzzy_method, score_cut_off, text_columns, weights,  model_type, labels_list

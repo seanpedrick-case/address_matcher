@@ -41,7 +41,7 @@ def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in
 
     # Determine length of search df to create batches to send through the functions.
     
-    def create_batch_ranges(dataframe, batch_size=20000):
+    def create_batch_ranges(dataframe, batch_size=25000):
         total_rows = dataframe.shape[0]
         ranges = []
         
@@ -62,10 +62,8 @@ def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in
 
         BatchMatch = copy.copy(InitMatch)
         BatchMatch.search_df = BatchMatch.search_df.iloc[row_range]
-        BatchMatch.search_df.to_csv("BatchMatch_search_df_batch_" + str(n+1) + ".csv")
 
         BatchMatch.search_df_not_matched = BatchMatch.search_df_not_matched.iloc[row_range]
-        BatchMatch.search_df_not_matched.to_csv("BatchMatch_search_df_not_matched_batch_" + str(n+1) + ".csv")
 
         # TURN ALL THE BELOW INTO A FUNCTION AND RUN THROUGH THE LOOP
         summary_of_summaries, BatchMatch_out = matcher_funcs.run_match_batch(BatchMatch, n, len(batch_ranges))
