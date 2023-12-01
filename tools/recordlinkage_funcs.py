@@ -242,7 +242,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
         'block_number_search', 'block_number_reference',
         "unit_number_search","unit_number_reference",
         'house_court_name_search', 'house_court_name_reference',
-        "search_mod_address", 'reference_mod_address','Postcode', 'Reference file']
+        "search_mod_address", 'reference_mod_address','Postcode', 'postcode', 'Reference file']
 
     #matched_output_SBM_cols = [search_df_key_field, 'search_orig_address', 'reference_orig_address',
     #'full_match', 'fuzzy_score_match', 'property_number_match', 'full_number_match', 
@@ -275,7 +275,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
     #scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
 
-    # When blocking by street, need to have an increased threshold as this is more prone to making mistakes
+    # When blocking by street, may to have an increased threshold as this is more prone to making mistakes (not currently higher than regular cutoff)
     if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)#0.9955)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
@@ -306,22 +306,37 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
 def check_matches_against_fuzzy(match_results, scoresSBM, search_df_key_field):
 
-    match_results = match_results.add_prefix("fuzz_").rename(columns={"fuzz_"+search_df_key_field:search_df_key_field})
+    print(match_results)
 
-    #Keep only full matches to compare with model output
+    if not match_results.empty:
 
-    match_results_t = match_results[match_results["fuzz_full_match"] == True]
+        if 'fuzz_full_match' not in match_results.columns:
+            match_results['fuzz_full_match'] = False
+
+        match_results = match_results.add_prefix("fuzz_").rename(columns={"fuzz_"+search_df_key_field:search_df_key_field})
+
+        #Keep only full matches to compare with model output
+
+        #match_results_t = match_results[match_results["fuzz_full_match"] == True]
+
+        #Merge fuzzy match full matches onto model data
+
+        scoresSBM_m = scoresSBM.merge(match_results.drop_duplicates(search_df_key_field), on = search_df_key_field, how = "left")
+        
+    else:
+         scoresSBM_m =  scoresSBM
+         scoresSBM_m["fuzz_full_match"] = False
+         scoresSBM_m['fuzz_fuzzy_score_match'] = False
+         scoresSBM_m['fuzz_property_number_match'] = False
+         scoresSBM_m['fuzz_fuzzy_score'] = 0
+         scoresSBM_m['fuzz_reference_orig_address'] = ""
 
     scoresSBM_t = scoresSBM[scoresSBM["full_match_score_based"]==True]
-
-    #Merge fuzzy match full matches onto model data
-
-    scoresSBM_m = scoresSBM.merge(match_results.drop_duplicates(search_df_key_field), on = search_df_key_field, how = "left")
 
     ### Create a df of matches the model finds that the fuzzy matching work did not
 
     scoresSBM_m_model_add_matches = scoresSBM_m[(scoresSBM_m["full_match_score_based"] == True) &\
-                                                         (scoresSBM_m["fuzz_full_match"] == False)]
+                                                            (scoresSBM_m["fuzz_full_match"] == False)]
 
     # Drop some irrelevant columns
 
@@ -337,28 +352,33 @@ def check_matches_against_fuzzy(match_results, scoresSBM, search_df_key_field):
 
     ### Create a df for matches the fuzzy matching found that the neural net model does not
 
-    scoresSBM_t_model_failed = match_results[(~match_results[search_df_key_field].isin(scoresSBM_t[search_df_key_field])) &\
-                                                      (match_results["fuzz_full_match"] == True)]
+    if not match_results.empty:
+        scoresSBM_t_model_failed = match_results[(~match_results[search_df_key_field].isin(scoresSBM_t[search_df_key_field])) &\
+                                                        (match_results["fuzz_full_match"] == True)]
 
-    scoresSBM_t_model_failed = scoresSBM_t_model_failed.\
-        merge(scoresSBM.drop_duplicates(search_df_key_field), on = search_df_key_field, how = "left")
+        scoresSBM_t_model_failed = scoresSBM_t_model_failed.\
+            merge(scoresSBM.drop_duplicates(search_df_key_field), on = search_df_key_field, how = "left")
 
-    scoresSBM_t_model_failed = scoresSBM_t_model_failed[first_cols+last_cols].drop(['fuzz_search_mod_address',
-       'fuzz_reference_mod_address', 'fuzz_fulladdress', 'fuzz_UPRN'], axis=1, errors="ignore")
-    
+        scoresSBM_t_model_failed = scoresSBM_t_model_failed[first_cols+last_cols].drop(['fuzz_search_mod_address',
+        'fuzz_reference_mod_address', 'fuzz_fulladdress', 'fuzz_UPRN'], axis=1, errors="ignore")
+    else:
+          scoresSBM_t_model_failed = pd.DataFrame()
+
     ## Join back onto original results file and export
 
     scoresSBM_new_matches_from_model = scoresSBM_m_model_add_matches.drop_duplicates(search_df_key_field)
 
-    match_results_out = match_results.merge(scoresSBM_new_matches_from_model[[search_df_key_field, 'full_match_score_based', 'address_pred',
-       'address_ref']], on = search_df_key_field, how = "left")
+    if not match_results.empty:
+        match_results_out = match_results.merge(scoresSBM_new_matches_from_model[[search_df_key_field, 'full_match_score_based', 'address_pred',
+        'address_ref']], on = search_df_key_field, how = "left")
 
-    match_results_out.loc[match_results_out['full_match_score_based'].isna(),'full_match_score_based'] = False
+        match_results_out.loc[match_results_out['full_match_score_based'].isna(),'full_match_score_based'] = False
 
-    #match_results_out['full_match_score_based'].value_counts()
+        #match_results_out['full_match_score_based'].value_counts()
 
-    match_results_out["full_match_fuzzy_or_score_based"] = (match_results_out["fuzz_full_match"] == True) |\
-    (match_results_out["full_match_score_based"] == True)
+        match_results_out["full_match_fuzzy_or_score_based"] = (match_results_out["fuzz_full_match"] == True) |\
+        (match_results_out["full_match_score_based"] == True)
+    else: match_results_out = match_results
 
     return scoresSBM_m_model_add_matches, scoresSBM_t_model_failed, match_results_out
 # ## Overarching neural net matcher/standardisation function

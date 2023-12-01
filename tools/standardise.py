@@ -172,14 +172,15 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     else:
         df_copy[out_col] = df_copy['add_no_pcode']
         df[out_col] = df_copy['add_no_pcode']
-        
+
+    ## POST STANDARDISATION CLEANING AND INFORMATION EXTRACTION  
     # Remove trailing spaces
     df[out_col] = df[out_col].str.strip()
     
     # Pull out property, flat, and room numbers from the address text
     df['property_number'] = extract_prop_no(df_copy, out_col)
 
-    # Extract flat, apartment, block, unit numbers
+    # Extract flat, apartment numbers
     df = extract_flat_and_other_no(df, out_col)
 
     df['flat_number'] = merge_series(df['flat_number'], df['apart_number'])
@@ -189,6 +190,9 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     
     # Extract room numbers
     df['room_number'] = extract_room_no(df, out_col)
+
+    # Extract block and unit names
+    df = extract_block_and_unit_name(df, out_col)
 
     # Extract house or court name
     df['house_court_name'] = extract_house_or_court_name(df, out_col)
@@ -553,17 +557,7 @@ def extract_flat_and_other_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSe
     df_out["first_sec_number"] = replaced_series.str.extract(r'(\d+.*?)[^a-zA-Z0-9_].*?\d+')
     df_out["first_letter_flat_number"] = replaced_series.str.extract(r'\b([A-Za-z])\b[^\d]* \d')
 
-    extracted_series = replaced_series.str.extract(r'(?i)(?:block|blocks) (\w+)')
-    if 1 in  extracted_series.columns:  
-        df_out["block_number"] = extracted_series[0].fillna(extracted_series[1])
-    else: 
-        df_out["block_number"] = extracted_series[0]
 
-    extracted_series = replaced_series.str.extract(r'(?i)(?:unit|units) (\w+)')
-    if 1 in  extracted_series.columns:  
-        df_out["unit_number"] = extracted_series[0].fillna(extracted_series[1])
-    else: 
-        df_out["unit_number"] = extracted_series[0]
 
     #print(df_out)
         
@@ -571,15 +565,36 @@ def extract_flat_and_other_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSe
 
 def extract_house_or_court_name(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
-    Extract house or court name
+    Extract house or court name. Extended to include estate, buildings, and mansions
     '''
-    extracted_series = df[col1].str.extract(r"(\w+)\s+(house|court)")
+    extracted_series = df[col1].str.extract(r"(\w+)\s+(house|court|estate|buildings|mansions)")
     if 1 in  extracted_series.columns:  
         df["house_court_name"] = extracted_series[0].fillna(extracted_series[1])
     else: 
         df["house_court_name"] = extracted_series[0]
 
     return df["house_court_name"]
+
+def extract_block_and_unit_name(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+    '''
+    Extract house or court name. Extended to include estate, buildings, and mansions
+    '''
+
+    df_out = df
+
+    extracted_series = df_out[col1].str.extract(r'(?i)(?:block|blocks) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["block_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["block_number"] = extracted_series[0]
+
+    extracted_series = df[col1].str.extract(r'(?i)(?:unit|units) (\w+)')
+    if 1 in  extracted_series.columns:  
+        df_out["unit_number"] = extracted_series[0].fillna(extracted_series[1])
+    else: 
+        df_out["unit_number"] = extracted_series[0]
+
+    return df_out
 
 def extract_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     '''

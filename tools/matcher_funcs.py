@@ -354,6 +354,7 @@ def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()
 
         if run_match == False:
             FuzzyStdMatch = copy.copy(InitialMatch)
+            overall_tic = time.perf_counter()
     
         ''' First on non-standardised addresses '''
         progress(.50, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Neural net - non-standardised dataset")
@@ -758,8 +759,8 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
     else:
         matched_output_SBM_pc["match_method"] = "Neural net - Postcode" #+ standard_label
         
-        summary_base = create_match_summary(match_results, df_name = "baseline model (pre neural net matching)")
-        print(summary_base)
+        #summary_base = create_match_summary(match_results, df_name = "baseline model (pre neural net matching)")
+        #print(summary_base)
         
         scoresSBM_new_matches_from_model_pc, scoresSBM_fuzzy_matches_not_found_by_model_pc, match_results_out_pc = \
                                             check_matches_against_fuzzy(match_results=match_results,

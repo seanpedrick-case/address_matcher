@@ -14,7 +14,7 @@ details here: https://stackoverflow.com/questions/31806695/when-to-use-which-fuz
 fuzzy_scorer_used = "token_set_ratio"
 
 # +
-fuzzy_match_limit = 80
+fuzzy_match_limit = 85
 
 fuzzy_search_addr_limit = 20
 
