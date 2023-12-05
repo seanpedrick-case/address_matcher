@@ -276,14 +276,14 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     #scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
 
     # When blocking by street, may to have an increased threshold as this is more prone to making mistakes (not currently higher than regular cutoff)
-    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)#0.9955)
+    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 99)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     
     ### Reorder some columns
     scoresSBM_out, start_columns = rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, blocker_column, standardise)
 
-    scoresSBM_out.to_csv("scoresSBM_out.csv")
+    #scoresSBM_out.to_csv("scoresSBM_out.csv")
 
     # Choose 'best' result. This is currently just removing duplicates - not very satisfying!
     ### NEED TO NOT DO THIS FILTER BELOW UNTIL AFTER CREATING THE MATCH RESULTS
@@ -297,8 +297,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     #print(matched_output_SBM_best.columns)
     #print(scoresSBM_out.columns)
 
-    matched_output_SBM.to_csv("matched_output_SBM.csv")
-    matched_output_SBM_best.to_csv("matched_output_SBM_best.csv")
+    #matched_output_SBM.to_csv("matched_output_SBM.csv")
+    #matched_output_SBM_best.to_csv("matched_output_SBM_best.csv")
 
     scoresSBM_best = scoresSBM_out[scoresSBM_out[search_df_key_field].isin(matched_output_SBM_best[search_df_key_field])]
 

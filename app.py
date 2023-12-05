@@ -108,7 +108,8 @@ with block:
     # Address matcher
     Match single or multiple addresses to the reference address file of your choice. Fuzzy matching should work on any address columns as long as you specify the postcode column at the end. The neural network component only activates with the in-house neural network model - contact me for details if you have access to AddressBase already.The neural network component works with LLPG files in the LPI format.
     
-    The tool can accept csv, xlsx (with one sheet), and parquet files. You need to specify the address columns of the file to match specifically in the address column area with postcode at the end. 
+    The tool can accept csv, xlsx (with one sheet), and parquet files. You
+     need to specify the address columns of the file to match specifically in the address column area with postcode at the end. 
     
     Use the 'New Column' button to create a new cell for each column name. After you have chosen a reference file, an address match file, and specified its address columns (plus postcode), you can press 'Match addresses' to run the tool.
     """)
