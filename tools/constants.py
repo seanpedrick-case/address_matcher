@@ -209,16 +209,17 @@ score_cut_off = 97.5 #98.7
 score_cut_off_nnet_street = score_cut_off # 99.238
 #score_cut_off = 97.5
 
-ref_address_cols = ["SaoStartNumber", "SaoStartSuffix", "SaoEndNumber", "SaoEndSuffix",
+ref_address_cols = ["Organisation", "SaoStartNumber", "SaoStartSuffix", "SaoEndNumber", "SaoEndSuffix",
        "SaoText", "PaoStartNumber", "PaoStartSuffix", "PaoEndNumber",
        "PaoEndSuffix", "PaoText", "Street", "PostTown", "Postcode"]
 
 # Create a list of matching variables. 
 matching_variables = ref_address_cols
-text_columns = ["PaoText", "Street", "PostTown", "Postcode"]
+text_columns = ["Organisation", "PaoText", "Street", "PostTown", "Postcode"]
 
 # Modify relative importance of columns (weights). Modify weighting for scores - Town and AdministrativeArea are not very important as we have postcode. Street number and name are important
 
+Organisation_weight = 0.1 # Organisation weight is very low just to resolve tie breakers for very similar addresses
 PaoStartNumber_weight = 2
 SaoStartNumber_weight = 2
 Street_weight = 2
@@ -234,6 +235,7 @@ weights = {weight_keys[i]: weight_vals[i] for i in range(len(weight_keys))}
 # +
 # Modify weighting for scores - Town and AdministrativeArea are not very important as we have postcode. Street number and name are important
 
+weights["Organisation"] = Organisation_weight
 weights["SaoStartNumber"] = SaoStartNumber_weight
 weights["PaoStartNumber"] = PaoStartNumber_weight
 weights["Street"] = Street_weight

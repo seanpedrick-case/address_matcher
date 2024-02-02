@@ -152,7 +152,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
     
         if 'SaoText' in Matcher.ref.columns: 
             Matcher.standard_llpg_format = True
-            Matcher.ref_address_cols = ["SaoStartNumber", "SaoStartSuffix", "SaoEndNumber", "SaoEndSuffix", "SaoText", "PaoStartNumber", "PaoStartSuffix", "PaoEndNumber",
+            Matcher.ref_address_cols = ["Organisation", "SaoStartNumber", "SaoStartSuffix", "SaoEndNumber", "SaoEndSuffix", "SaoText", "PaoStartNumber", "PaoStartSuffix", "PaoEndNumber",
             "PaoEndSuffix", "PaoText", "Street", "PostTown", "Postcode"]
         else: 
             Matcher.standard_llpg_format = False
@@ -162,13 +162,7 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
 
         # Reset index for ref as multiple files may have been combined with identical indices
         Matcher.ref = Matcher.ref.reset_index().drop("index", axis = 1)
-        Matcher.ref.index.name = 'index'
-            
-        ### Load in search data ###
-        #print(in_text)
-        #print(in_file)
-
-        
+        Matcher.ref.index.name = 'index'       
     
         if in_file: 
             Matcher.file_name = get_file_name(in_file[0].name)
@@ -295,13 +289,13 @@ def load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joinc
 
 # # DF preparation functions
 
-from tools.preparation import prepare_search_address_string, prepare_search_address, _clean_columns, _join_address, _add_postcode_column, _ensure_index, create_full_address, prepare_ref_address
-from tools.standardise import standardise_wrapper_func, standardise_address, extract_street_name, remove_flat_one_number_address, add_flat_addresses_start_with_letter, extract_letter_one_number_address, replace_floor_flat, remove_non_housing, extract_prop_no,extract_room_no, extract_flat_and_other_no, extract_postcode, remove_postcode, replace_mistaken_dates, merge_series, remove_non_postal, clean_cols
-from tools.fuzzy_match import string_match_array, string_match_by_post_code_multiple, _create_fuzzy_match_results_output, refine_export_results, create_diag_shortlist, create_fuzzy_matched_col, join_to_orig_df
+from tools.preparation import prepare_search_address_string, prepare_search_address,  prepare_ref_address
+from tools.standardise import standardise_wrapper_func, extract_street_name, remove_non_postal, check_no_number_addresses
+from tools.fuzzy_match import string_match_by_post_code_multiple, _create_fuzzy_match_results_output, join_to_orig_df
 
 # Neural network functions
 ### Predict function for imported model
-from tools.model_predict import full_predict_func, predict_torch, torch_predictions_to_dicts, torch_prep_predict_export, full_predict_torch, post_predict_clean, text_to_model_input_local, reformat_predictions_local, predict_serve_conv_local, prep_predict_export, vocab_lookup
+from tools.model_predict import full_predict_func, full_predict_torch, post_predict_clean
 from tools.recordlinkage_funcs import score_based_match, check_matches_against_fuzzy
 
 
@@ -370,7 +364,7 @@ def run_match_batch(InitialMatch, batch_n, total_batches, progress=gr.Progress()
             return FuzzyNNetNotStdMatch.output_summary, FuzzyNNetNotStdMatch
     
         ''' Next on standardised addresses '''
-        progress(.75, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + " batches. Neural net - standardised dataset")
+        progress(.75, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Neural net - standardised dataset")
         df_name = "Neural net standardised"
         
         FuzzyNNetStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
@@ -506,7 +500,11 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
     if type(search_df) == str: search_df_prep, search_df_key_field, search_address_cols = prepare_search_address_string(search_df)
     else: search_df_prep, search_df_key_field = prepare_search_address(search_df, search_address_cols, search_postcode_col, search_df_key_field)
 
+    # Remove addresses that are not postal addresses
     search_df_prep = remove_non_postal(search_df_prep, "full_address")
+
+    # Remove addresses that have no numbers in from consideration
+    search_df_prep = check_no_number_addresses(search_df_prep, "full_address")
 
     #ref.to_csv("ref.csv")
 
@@ -558,6 +556,8 @@ def full_fuzzy_match(search_df, ref, standardise, ref_address_cols, search_df_ke
 
     match_results_output, compare_all_candidates, diag_shortlist, diag_best_match = _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref_join, fuzzy_match_limit, search_df_prep, search_df_key_field, new_join_col, standardise, blocker_col = "Postcode")
     
+    #compare_all_candidates.to_csv("compare_all_candidates.csv")
+
     match_results_output['match_method'] = "Fuzzy match - postcode"
     
     search_df_not_matched = filter_not_matched(match_results_output, search_df_prep_join, search_df_key_field)
@@ -661,6 +661,9 @@ def full_nn_match(ref, ref_address_cols, search_df, search_address_cols,
 
     # Remove non-postal addresses from consideration
     search_df_prep = remove_non_postal(search_df_prep, "full_address")
+
+    # Remove addresses that have no numbers in from consideration
+    search_df_prep = check_no_number_addresses(search_df_prep, "full_address")
 
 
     search_df_prep, ref_df, search_df_match_list, ref_df_match_list, search_df_stand_col, ref_df_stand_col =\

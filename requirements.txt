@@ -7,4 +7,6 @@ torch
 recordlinkage
 pyap
 pytest
-gradio==3.50.0
+pyarrow
+openpyxl
+gradio==4.16.0

@@ -29,7 +29,13 @@ def put_columns_in_df(in_file):
     concat_choices = []
     
     for file in in_file:
-        df = read_file(file.name)
+        file_list = [string.name for string in in_file]
+
+        #print(file_list)
+
+        data_file_name = [string.lower() for string in file_list if "results_on_orig" not in string.lower()]
+
+        df = read_file(data_file_name[0])
         new_choices = list(df.columns)
 
         concat_choices.extend(new_choices)     

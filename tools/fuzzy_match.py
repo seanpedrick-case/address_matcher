@@ -145,7 +145,8 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         'close_postcode_match',
         'house_court_name_match',
         'fuzzy_score_match',
-        "fuzzy_score", 
+        "fuzzy_score",
+        "wratio_score",
         'property_number_search', 'property_number_reference',  
         'flat_number_search', 'flat_number_reference', 
         'room_number_search', 'room_number_reference',
@@ -256,13 +257,15 @@ def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, f
         
         ### Dealing with tie breaks ##
         # Do a backup simple Wratio search on the open text to act as a tie breaker when the fuzzy scores are identical
+        # fuzz.WRatio
         if resolve_tie_breaks == True:
-            def compare_strings_wratio(row, scorer = fuzz.WRatio, fuzzy_col = fuzzy_col):
+            def compare_strings_wratio(row, scorer = fuzz.ratio, fuzzy_col = fuzzy_col):
                 search_score = process.cdist([row[search_mod_address]], [row["reference_mod_address"]], scorer=scorer)
                 return search_score[0][0]
 
             diag_shortlist_dups = diag_shortlist[diag_shortlist['full_number_match'] == True]
             diag_shortlist_dups = diag_shortlist_dups.loc[diag_shortlist_dups.duplicated(subset= [search_mod_address, 'full_number_match', "room_number_search", fuzzy_col], keep=False)]
+
             if not diag_shortlist_dups.empty:
                 diag_shortlist_dups["wratio_score"] = diag_shortlist_dups.apply(compare_strings_wratio, axis=1)
                                     
@@ -270,6 +273,9 @@ def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, f
                                     
                 # Choose the best match
                 diag_shortlist = diag_shortlist.sort_values([search_mod_address, 'full_number_match', "room_number_search", fuzzy_col, "wratio_score"], ascending = False)
+
+        if 'wratio_score' not in diag_shortlist.columns:
+            diag_shortlist['wratio_score'] = ''
 
         return diag_shortlist
 
@@ -340,7 +346,8 @@ def refine_export_results(results_df:PandasDataFrame,
         'property_number_match',
         'close_postcode_match',
         'fuzzy_score_match',
-        "fuzzy_score", 
+        "fuzzy_score",
+        "wratio_score",
         'property_number_search', 'property_number_reference',  
         'flat_number_search', 'flat_number_reference', 
         'room_number_search', 'room_number_reference',
@@ -421,7 +428,7 @@ def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_jo
     # Replace cells with only 'nan' with blank
     search_df_j = search_df_j.replace(r'^nan$', "", regex=True)
 
-    #search_df_j = search_df_j.rename(columns={"full_address":"Combined address"})
+    #search_df_j = search_df_j.rename(columns={"full_address":"Combined search address"})
 
     #print(search_df_j.index)
 

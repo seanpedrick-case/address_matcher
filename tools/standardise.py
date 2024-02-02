@@ -187,6 +187,7 @@ def standardise_address(df:PandasDataFrame, col:str, out_col:str, standardise:bo
     df['flat_number'] = merge_series(df['flat_number'], df['prop_number'])
     df['flat_number'] = merge_series(df['flat_number'], df['first_sec_number'])
     df['flat_number'] = merge_series(df['flat_number'], df['first_letter_flat_number'])
+    df['flat_number'] = merge_series(df['flat_number'], df['first_letter_no_more_numbers'])
     
     # Extract room numbers
     df['room_number'] = extract_room_no(df, out_col)
@@ -482,6 +483,8 @@ def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     
     return df['new_col']
 
+
+
 def remove_non_housing(df:PandasDataFrame, col1:PandasSeries) -> PandasDataFrame:
     '''
     Remove items from the housing list that are not housing. Includes addresses including
@@ -532,36 +535,35 @@ def extract_flat_and_other_no(df:PandasDataFrame, col1:PandasSeries) -> PandasSe
     # ^\d+([a-z]|[A-Z])
     '''  
     
+    #  the regex  essentially matches strings that satisfy any of the following conditions:
+
+    # Start with a number followed by a single letter (either lowercase or uppercase) and not followed by any other number.
+    # Contain the word "flat" or "apartment".
+    # Start with a number, followed by any characters that are not alphanumeric (denoted by [^a-zA-Z0-9_]), and then another number.
+
     replaced_series = df[df[col1].str.lower().str.replace(r"^\bflats\b","flat", regex=True).str.contains(\
-            r"^\d+([a-z]|[A-Z])(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
+            r"^\d+([a-z]|[A-Z])(?!.*\d+)|^([a-z] |[A-Z] )(?!.*\d+)|\bflat\b|\bapartment\b|(\d+.*?)[^a-zA-Z0-9_].*?\d+")][col1].str.replace(\
             "no.","", regex=True)
-
-    replaced_series = replaced_series#.str.lower()
        
-    df_out = df
-
-    df_out["prop_number"] = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)')
+    df["prop_number"] = replaced_series.str.extract(r'^\d+([a-z]|[A-Z])(?!.*\d+)')
 
     extracted_series = replaced_series.str.extract(r'(?i)(?:flat|flats) (\w+)')
     if 1 in  extracted_series.columns:  
-        df_out["flat_number"] = extracted_series[0].fillna(extracted_series[1])
+        df["flat_number"] = extracted_series[0].fillna(extracted_series[1])
     else: 
-        df_out["flat_number"] = extracted_series[0]
+        df["flat_number"] = extracted_series[0]
 
     extracted_series = replaced_series.str.extract(r'(?i)(?:apartment|apartments) (\w+)')
     if 1 in  extracted_series.columns:  
-        df_out["apart_number"] = extracted_series[0].fillna(extracted_series[1])
+        df["apart_number"] = extracted_series[0].fillna(extracted_series[1])
     else: 
-        df_out["apart_number"] = extracted_series[0]
+        df["apart_number"] = extracted_series[0]
     
-    df_out["first_sec_number"] = replaced_series.str.extract(r'(\d+.*?)[^a-zA-Z0-9_].*?\d+')
-    df_out["first_letter_flat_number"] = replaced_series.str.extract(r'\b([A-Za-z])\b[^\d]* \d')
-
-
-
-    #print(df_out)
+    df["first_sec_number"] = replaced_series.str.extract(r'(\d+.*?)[^a-zA-Z0-9_].*?\d+')
+    df["first_letter_flat_number"] = replaced_series.str.extract(r'\b([A-Za-z])\b[^\d]* \d')
+    df["first_letter_no_more_numbers"] = replaced_series.str.extract(r'^([a-z] |[A-Z] )(?!.*\d+)')
         
-    return df_out
+    return df
 
 def extract_house_or_court_name(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     '''
@@ -580,21 +582,19 @@ def extract_block_and_unit_name(df:PandasDataFrame, col1:PandasSeries) -> Pandas
     Extract house or court name. Extended to include estate, buildings, and mansions
     '''
 
-    df_out = df
-
-    extracted_series = df_out[col1].str.extract(r'(?i)(?:block|blocks) (\w+)')
+    extracted_series = df[col1].str.extract(r'(?i)(?:block|blocks) (\w+)')
     if 1 in  extracted_series.columns:  
-        df_out["block_number"] = extracted_series[0].fillna(extracted_series[1])
+        df["block_number"] = extracted_series[0].fillna(extracted_series[1])
     else: 
-        df_out["block_number"] = extracted_series[0]
+        df["block_number"] = extracted_series[0]
 
     extracted_series = df[col1].str.extract(r'(?i)(?:unit|units) (\w+)')
     if 1 in  extracted_series.columns:  
-        df_out["unit_number"] = extracted_series[0].fillna(extracted_series[1])
+        df["unit_number"] = extracted_series[0].fillna(extracted_series[1])
     else: 
-        df_out["unit_number"] = extracted_series[0]
+        df["unit_number"] = extracted_series[0]
 
-    return df_out
+    return df
 
 def extract_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     '''
@@ -618,16 +618,33 @@ def remove_postcode(df:PandasDataFrame, col:str) -> PandasSeries:
     
     return address_series_no_pcode
 
+# Remove addresses with no numbers in at all - too high a risk of badly assigning an address
+def check_no_number_addresses(df:PandasDataFrame, in_address_series:PandasSeries) -> PandasSeries:
+    '''
+    Highlight addresses from a pandas df where there are no numbers in the address.
+    '''
+    df["in_address_series_temp"] = df[in_address_series].str.lower()
+
+    no_numbers_series = df["in_address_series_temp"].str.contains("^(?!.*\d+).*$", regex=True)
+
+    df.loc[no_numbers_series == True, 'Excluded from search'] = "Excluded - no numbers in address"
+
+    df = df.drop("in_address_series_temp", axis = 1)
+
+    print(df[["full_address", "Excluded from search"]])
+
+    return df
+
 # Exclude non-postal addresses
 def remove_non_postal(df, in_address_series):
     '''
-    Remove non-postal addresses from a pandas df where a string series that contain specific substrings
+    Highlight non-postal addresses from a pandas df where a string series that contain specific substrings
     indicating non-postal addresses like 'garage', 'parking', 'shed', etc.
     '''
     df["in_address_series_temp"] = df[in_address_series].str.lower()
 
     garage_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bgarage\\b|\\bgarages\\b)", regex=True)
-    parking_address_series = df["in_address_series_temp"].str.contains("\\bparking\\b", regex=True)
+    parking_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bparking\\b)", regex=True)
     shed_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bshed\\b|\\bsheds\\b)", regex=True)
     bike_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbike\\b|\\bbikes\\b)", regex=True)
     bicycle_store_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbicycle store\\b|\\bbicycle store\\b)", regex=True)

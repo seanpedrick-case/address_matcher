@@ -170,7 +170,11 @@ def full_predict_func(list_to_predict, model, vocab, labels_list):
     output = predict_serve_conv_local(list(list_to_predict), labels_list, predictions_list_reformat)
 
     list_out, predict_df = prep_predict_export(output, list_to_predict)
-    
+
+    # Add organisation as a column if it doesn't already exist    
+    if 'Organisation' not in predict_df.columns:
+        predict_df['Organisation'] = ""
+
     return list_out, predict_df
 
 # -

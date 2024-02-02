@@ -10,7 +10,7 @@ array = List[str]
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
-from tools.standardise import extract_postcode, remove_postcode
+from tools.standardise import extract_postcode, remove_postcode, extract_street_name
 
 def prepare_search_address_string(
     search_str: str
@@ -135,10 +135,10 @@ def create_full_address(df):
 
     df = df.fillna("")
 
-    df["full_address"] = df['SaoText'].str.replace(" - ", " REPL ").str.replace("- ", " REPLEFT ").str.replace(" -", " REPLRIGHT ") +\
-            " " + df["SaoStartNumber"].astype(str) + df["SaoStartSuffix"] + "-" + df["SaoEndNumber"].astype(str) + df["SaoEndSuffix"] + " " + df["PaoText"].str.replace(" - ", " REPL ").str.replace("- ", " REPLEFT ").str.replace(" -", " REPLRIGHT ") +\
-             " " + df["PaoStartNumber"].astype(str) + df["PaoStartSuffix"] + "-" + df["PaoEndNumber"].astype(str) + df["PaoEndSuffix"] + " " + df["Street"] +\
-            " " + df["PostTown"] + " " + df["Postcode"]
+    if "Organisation" not in df.columns:
+        df["Organisation"] = ""
+
+    df["full_address"] = df['Organisation'] + " " + df['SaoText'].str.replace(" - ", " REPL ").str.replace("- ", " REPLEFT ").str.replace(" -", " REPLRIGHT ") + " " + df["SaoStartNumber"].astype(str) + df["SaoStartSuffix"] + "-" + df["SaoEndNumber"].astype(str) + df["SaoEndSuffix"] + " " + df["PaoText"].str.replace(" - ", " REPL ").str.replace("- ", " REPLEFT ").str.replace(" -", " REPLRIGHT ") + " " + df["PaoStartNumber"].astype(str) + df["PaoStartSuffix"] + "-" + df["PaoEndNumber"].astype(str) + df["PaoEndSuffix"] + " " + df["Street"] + " " + df["PostTown"] + " " + df["Postcode"]
 
     #.str.replace(r'(?<=[a-zA-Z])-(?![a-zA-Z])|(?<![a-zA-Z])-(?=[a-zA-Z])', ' ', regex=True)\
     
@@ -171,19 +171,24 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     ref_address_cols_uprn.extend(new_join_col)
     ref_address_cols_uprn_w_ref = ref_address_cols_uprn.copy()
     ref_address_cols_uprn_w_ref.extend(["Reference file"])
+
+    #print(ref_address_cols_uprn_w_ref)
     
     ref_df = ref.copy()
 
-    # Drop duplicates in the key field
-    ref_df = ref_df.drop_duplicates(new_join_col)
-    
+    # Drop duplicates in the key field - not necessary?
+    #ref_df = ref_df.drop_duplicates(new_join_col)
+
+    #print(ref_df)
+
+      
     # In on-prem LPI db street has been excluded, so put this back in
     if ('Street' not in ref_df.columns) & ('Address_LPI' in ref_df.columns): 
             ref_df['Street'] = ref_df['Address_LPI'].str.replace("\\n", " ", regex = True).apply(extract_street_name)#
         
- 
-    #ref_df['PostTown'] = ''
-    
+    if ('Organisation' not in ref_df.columns) & ('SaoText' in ref_df.columns):
+        ref_df['Organisation'] = ""
+     
     ref_df = ref_df[ref_address_cols_uprn_w_ref]
 
     ref_df = ref_df.fillna("")
@@ -200,9 +205,7 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
 
     ref_df = ref_df.replace("nan","")
     ref_df = ref_df.replace("\.0","",regex=True)
-    
-    
-    
+      
     if standard_cols == True:
         ref_df= ref_df[ref_address_cols_uprn_w_ref].fillna('')
 

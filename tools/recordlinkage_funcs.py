@@ -148,6 +148,7 @@ def rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, b
     final_cols.extend([search_df_key_field, 'full_match_score_based', 'address_pred', 'address_ref',\
                                                 'match_score', 'max_possible_score', 'perc_weighted_columns_matched',\
                                                 'perc_weighted_columns_matched_max_for_pred_address',\
+                                                'Organisation', 'Organisation_ref', 'Organisation_pred',\
                                                 'SaoText', 'SaoText_ref', 'SaoText_pred',\
                                                 'SaoStartNumber', 'SaoStartNumber_ref', 'SaoStartNumber_pred',\
                                                 'SaoStartSuffix', 'SaoStartSuffix_ref', 'SaoStartSuffix_pred',\
@@ -283,7 +284,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
     ### Reorder some columns
     scoresSBM_out, start_columns = rearrange_columns(scoresSBM_search_m_j, new_join_col, search_df_key_field, blocker_column, standardise)
 
-    #scoresSBM_out.to_csv("scoresSBM_out.csv")
+    scoresSBM_out.to_csv("scoresSBM_out.csv")
 
     # Choose 'best' result. This is currently just removing duplicates - not very satisfying!
     ### NEED TO NOT DO THIS FILTER BELOW UNTIL AFTER CREATING THE MATCH RESULTS
@@ -306,7 +307,7 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
 def check_matches_against_fuzzy(match_results, scoresSBM, search_df_key_field):
 
-    print(match_results)
+    #print(match_results)
 
     if not match_results.empty:
 
