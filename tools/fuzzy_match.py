@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
-from typing import TypeVar, Dict, List, Tuple
+from typing import Dict, List, Tuple, Type
 from datetime import datetime
 from rapidfuzz import fuzz, process
 
-PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
-PandasSeries = TypeVar('pd.core.frame.Series')
+PandasDataFrame = Type[pd.DataFrame]
+PandasSeries = Type[pd.Series]
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
@@ -134,7 +134,7 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         
         ## Fuzzy search results
 
-        match_results_cols = ['search_orig_address','reference_orig_address',
+        match_results_cols = ['search_orig_address','reference_orig_address', 'ref_index',
         'full_match',
         'full_number_match',
         'flat_number_match',
@@ -290,8 +290,8 @@ def refine_export_results(results_df:PandasDataFrame,
     the score limit specified by the user and exports results list, matched and unmatched files.
     '''
     
-    results_join = results_df.reset_index()
-    
+    results_join = results_df#.reset_index()
+   
     # Rename score column
     results_join = results_join.rename(columns = {"score":"fuzzy_score"})
     
@@ -302,40 +302,30 @@ def refine_export_results(results_df:PandasDataFrame,
     results_join = results_join[results_join[matched_col] !=0 ]
 
     ### Join property number and flat/room number onto results_df
+    ref_list_df["ref_index"] = ref_list_df.index
 
-    reference_j = ref_list_df[[final_ref_address_col, "property_number","flat_number","room_number","block_number", "unit_number", 'house_court_name',
+    reference_j = ref_list_df[["ref_index", final_ref_address_col, "property_number","flat_number","room_number","block_number", "unit_number", 'house_court_name',
             orig_ref_address_col,"Postcode"\
-    ]].rename(columns={"property_number": "property_number_reference",\
-                        "flat_number":"flat_number_reference",\
-                        "room_number":"room_number_reference",
-                        "block_number":"block_number_reference",\
-                        "unit_number":"unit_number_reference",\
-                        'house_court_name':'house_court_name_reference',\
-                        orig_ref_address_col: "reference_orig_address",\
+    ]].rename(columns={orig_ref_address_col: "reference_orig_address",\
                     final_ref_address_col:'reference_list_address'             
                     })
 
     results_join = results_join.merge(reference_j, how = "left", left_on = ref_list_col, right_on = "reference_list_address")
 
+    ### Create matched results output
     matched_j = matched_df[[final_matched_address_col,"property_number","flat_number","room_number", "block_number", "unit_number", 'house_court_name',
         orig_matched_address_col, "postcode",\
-            ]].rename(columns={"property_number": "property_number_search",\
-                            "flat_number":"flat_number_search",\
-                            "room_number":"room_number_search",\
-                            "block_number":"block_number_search",\
-                            "unit_number":"unit_number_search",\
-                            'house_court_name':'house_court_name_search',\
-                            orig_matched_address_col:"search_orig_address",\
+            ]].rename(columns={orig_matched_address_col:"search_orig_address",\
                             final_matched_address_col:'search_mod_address'
                             })
 
-    diag_j = results_join.merge(matched_j, how = "left", left_on = matched_col, right_on = "search_mod_address")
+    diag_j = results_join.merge(matched_j, how = "left", left_on = matched_col, right_on = "search_mod_address", suffixes=("_reference", "_search"))
 
     #diag_j.to_csv("diag_j.csv")
     
     diag_shortlist = create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col)
 
-    match_results_cols = ['search_orig_address','reference_orig_address',
+    match_results_cols = ['search_orig_address','reference_orig_address', 'ref_index',
         'full_match',
         'full_number_match',
         'flat_number_match',
@@ -361,79 +351,50 @@ def refine_export_results(results_df:PandasDataFrame,
     # Choose best match from the shortlist that has been ordered according to score descending
     diag_best_match = diag_shortlist[match_results_cols].drop_duplicates("search_mod_address")
 
-
-    diag_shortlist.to_csv("diagnostics_shortlist_" + today_rev + ".csv", index=None)
+    #diag_shortlist.to_csv("diagnostics_shortlist_" + today_rev + ".csv", index=None)
    
     return compare_all_candidates, diag_shortlist, diag_best_match
 
 def join_to_orig_df(match_results_output, search_df, search_df_key_field, new_join_col):
-    
+    ''' Join the match results back to the original dataframe
+    '''
     match_results_output_success = match_results_output[match_results_output["full_match"]==True]
 
-    # If you're joining to the original df on index you will need to recreate the index again
-    #print(match_results_output_success.columns)
+    # If you're joining to the original df on index you will need to recreate the index again 
 
     match_results_output_success = match_results_output_success.rename(columns={"reference_orig_address":"ref matched address",\
                                       "full_match":"Matched with ref record",\
                                         'uprn':'UPRN'                                                                             
                                      })
     
-    ref_join_cols = ["ref matched address","Matched with ref record", "Reference file", search_df_key_field]
+    ref_join_cols = ["ref_index", "ref matched address","Matched with ref record", "Reference file", search_df_key_field]
     ref_join_cols.extend(new_join_col)
+ 
+    #print("Match results output success columns: ", match_results_output_success.columns)
 
-    
-    
     if (search_df_key_field == "index"):
-        #print("Doing index match")
-        
-        match_results_output_success[search_df_key_field] = match_results_output_success[search_df_key_field].astype(float).astype(int)
-
-
-        #search_df.to_csv("search_df_pre_merge.csv")
-        
-        search_df_j = search_df.merge(match_results_output_success[ref_join_cols], left_index=True, right_on = search_df_key_field, how = "left",
-                                                                            suffixes = ('', '_y')) #.reset_index().drop("index", axis=1)
-        #search_df_j.to_csv("search_df_j.csv")
-        
+        match_results_output_success[search_df_key_field] = match_results_output_success[search_df_key_field].astype(float).astype(int)     
+        results_for_orig_df_join = search_df.merge(match_results_output_success[ref_join_cols], left_index=True, right_on = search_df_key_field, how = "left", suffixes = ('', '_y'))  
     else:
-        search_df_j = search_df.merge(match_results_output_success[ref_join_cols],how = "left", on = search_df_key_field, suffixes = ('', '_y'))
-
+        results_for_orig_df_join = search_df.merge(match_results_output_success[ref_join_cols],how = "left", on = search_df_key_field, suffixes = ('', '_y'))
 
     # If the join columns already exist in the search_df, then use the new column to fill in the NAs in the original column, then delete the new column
-    if "ref matched address_y" in search_df_j.columns: search_df_j['ref matched address'] = search_df_j['ref matched address'].fillna(search_df_j['ref matched address_y'])
-    if "Matched with ref record_y" in search_df_j.columns: search_df_j['Matched with ref record'] = pd.Series(np.where(search_df_j['Matched with ref record_y'].notna(), search_df_j['Matched with ref record_y'], search_df_j['Matched with ref record']))
-    if "Reference file_y" in search_df_j.columns: search_df_j['Reference file'] = search_df_j['Reference file'].fillna(search_df_j['Reference file_y'])
-    if "UPRN_y" in search_df_j.columns: search_df_j['UPRN'] = search_df_j['UPRN'].fillna(search_df_j['UPRN_y'])
-    #search_df_j['UPRN'] = search_df_j['UPRN'].fillna(search_df_j['UPRN_y'])
-    #search_df_j[search_df_key_field] = search_df_j[search_df_key_field].fillna(search_df_j[search_df_key_field + '_y'])
+    if "ref matched address_y" in results_for_orig_df_join.columns: results_for_orig_df_join['ref matched address'] = results_for_orig_df_join['ref matched address'].fillna(results_for_orig_df_join['ref matched address_y'])
+    if "Matched with ref record_y" in results_for_orig_df_join.columns: results_for_orig_df_join['Matched with ref record'] = pd.Series(np.where(results_for_orig_df_join['Matched with ref record_y'].notna(), results_for_orig_df_join['Matched with ref record_y'], results_for_orig_df_join['Matched with ref record']))
+    if "Reference file_y" in results_for_orig_df_join.columns: results_for_orig_df_join['Reference file'] = results_for_orig_df_join['Reference file'].fillna(results_for_orig_df_join['Reference file_y'])
+    if "UPRN_y" in results_for_orig_df_join.columns: results_for_orig_df_join['UPRN'] = results_for_orig_df_join['UPRN'].fillna(results_for_orig_df_join['UPRN_y'])
 
-    search_df_j = search_df_j.drop(['ref matched address_y', 'Matched with ref record_y', 'Reference file_y', 'search_df_key_field_y', 'UPRN_y', 'index_y'], axis = 1, errors = "ignore")
-
-    #search_df_j.set_index('index', inplace=True)
-
-    
     # Drop columns that aren't useful
-    search_df_j = search_df_j.drop(["full_address_search","postcode_search", "full_address_1", "full_address_2", "full_address",
-                                   "address_stand", "property_number","prop_number" "flat_number" "apart_number" "first_sec_number" "room_number"],
-                               axis=1, errors='ignore')
+    results_for_orig_df_join = results_for_orig_df_join.drop(['ref matched address_y', 'Matched with ref record_y', 'Reference file_y', 'search_df_key_field_y', 'UPRN_y', 'index_y', "full_address_search","postcode_search", "full_address_1", "full_address_2", "full_address",
+                                   "address_stand", "property_number","prop_number" "flat_number" "apart_number" "first_sec_number" "room_number"], axis = 1, errors = "ignore")
 
     # Replace blanks with NA, fix UPRNs
+    results_for_orig_df_join = results_for_orig_df_join.replace(r'^\s*$', np.nan, regex=True)   
 
-    search_df_j = search_df_j.replace(r'^\s*$', np.nan, regex=True)
-
-    
-
-    search_df_j[new_join_col] = search_df_j[new_join_col].astype(str).replace(".0","", regex=False).replace("nan","", regex=False)
+    results_for_orig_df_join[new_join_col] = results_for_orig_df_join[new_join_col].astype(str).replace(".0","", regex=False).replace("nan","", regex=False)
     
     # Replace cells with only 'nan' with blank
-    search_df_j = search_df_j.replace(r'^nan$', "", regex=True)
-
-    #search_df_j = search_df_j.rename(columns={"full_address":"Combined search address"})
-
-    #print(search_df_j.index)
-
-    # Only keep 
-    #search_df_j = search_df_j[search_df_j.index.notna() & (search_df_j.index != '')]
+    results_for_orig_df_join = results_for_orig_df_join.replace(r'^nan$', "", regex=True)
+  
     
-    
-    return search_df_j
+    return results_for_orig_df_join

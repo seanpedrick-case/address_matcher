@@ -24,23 +24,32 @@ def read_file(filename):
         return pd.read_parquet(filename)
 
 
-def put_columns_in_df(in_file):
+def initial_data_load(in_file):
     new_choices = []
     concat_choices = []
+    output_message = ""
+    results_df = pd.DataFrame()
+    df = pd.DataFrame()
     
-    for file in in_file:
-        file_list = [string.name for string in in_file]
+    file_list = [string.name for string in in_file]
 
-        #print(file_list)
+    data_file_names = [string for string in file_list if "results_on_orig" not in string.lower()]
+    if data_file_names:
+        df = read_file(data_file_names[0])
+    else:
+        error_message = "No data file found."
+        return error_message, gr.Dropdown(choices=concat_choices), gr.Dropdown(choices=concat_choices), df, results_df
 
-        data_file_name = [string.lower() for string in file_list if "results_on_orig" not in string.lower()]
+    results_file_names = [string for string in file_list if "results_on_orig" in string.lower()]
+    if results_file_names:
+        results_df = read_file(results_file_names[0])
+    
+    new_choices = list(df.columns)
+    concat_choices.extend(new_choices)
 
-        df = read_file(data_file_name[0])
-        new_choices = list(df.columns)
-
-        concat_choices.extend(new_choices)     
+    output_message = "Data successfully loaded"  
         
-    return gr.Dropdown(choices=concat_choices), gr.Dropdown(choices=concat_choices)
+    return output_message, gr.Dropdown(choices=concat_choices), gr.Dropdown(choices=concat_choices), df, results_df
 
 
 def dummy_function(in_colnames):

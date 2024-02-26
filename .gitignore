@@ -2,4 +2,7 @@
 *checkpoint.py
 *.pyc
 *.csv
+*.pem
 nnet_model/*
+test/*
+.ipynb_checkpoints/*

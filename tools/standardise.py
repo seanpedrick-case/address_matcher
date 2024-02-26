@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
-from typing import TypeVar, Dict, List, Tuple
+from typing import Type, Dict, List, Tuple
 from datetime import datetime
 
-PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
-PandasSeries = TypeVar('pd.core.frame.Series')
+PandasDataFrame = Type[pd.DataFrame]
+PandasSeries = Type[pd.Series]
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
@@ -311,14 +311,6 @@ def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> Pan
     df['contains_room'] = df[col1].str.lower().str.contains(r"\broom\b \w+|\brooms\b \w+", "", regex = True)
       
     
-    #df['selected_rows'] = (df['contains_letter_after_number'] == False) &\
-    #                      (df['two_numbers_in_address'] == False) &\
-    #                         (df['contains_flat'] == False) &\
-    #                         (df['contains_apartment'] == False) &\
-    #                         (df['contains_room'] == False)
-
-    # remove word flat/apartment/room from addresses that only have one number in the address, and don't have a letter after a number
-    
     df['selected_rows'] = (df['contains_letter_after_number'] == False) &\
                           (df['two_numbers_in_address'] == False) &\
                             (df['contains_single_letter_before_number'] == False) &\
@@ -329,11 +321,7 @@ def remove_flat_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> Pan
     df['one_number_no_flat'] =  df[df['selected_rows'] == True][col1]
     df['one_number_no_flat'] =  df['one_number_no_flat'].str.replace(r"(\bapartment\b)|(\bapartments\b)", "", regex=True).str.replace(r"(\bflat\b)|(\bflats\b)", "", regex=True).str.replace(r"(\broom\b)|(\brooms\b)", "", regex=True)
 
-    
-    #merge_columns(df, "new_col", col1, 'one_number_no_flat')
-    df["new_col"] = merge_series(df[col1], df["one_number_no_flat"]) #merge_series(full_series: pd.Series, partially_filled_series: pd.Series)
-
-    #print(df)
+    df["new_col"] = merge_series(df[col1], df["one_number_no_flat"])
     
     return df['new_col']
 
@@ -395,6 +383,27 @@ def extract_letter_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> 
     df["new_col"] = merge_series(df[col1], df['letter_after_number'])
     
     return df['new_col']
+
+# def extract_letter_one_number_address(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+#     '''
+#     This function extracts a letter after a single number in an address, excluding cases with existing flat, apartment, or room numbers.
+#     It transforms addresses like '2b sycamore road' to 'flat b 2 sycamore road' to designate 'b' as the flat number.
+#     '''
+    
+#     df['selected_rows'] = (df[col1].str.lower().str.contains(r"^(?:(?!\d+ ).)*$") & \
+#                            df[col1].str.lower().str.contains(r"\d+(?:[a-z]|[A-Z])(?!.*\d+)") & \
+#                            ~df[col1].str.lower().str.contains(r"\bflat\b \w+|\bflats\b \w+|\bapartment\b \w+|\bapartments\b \w+|\broom\b \w+|\brooms\b \w+"))
+    
+#     df['extract_letter'] = df.loc[df['selected_rows'], col1].str.extract(r"\d+([a-z]|[A-Z])")
+#     df['extract_number'] = df.loc[df['selected_rows'], col1].str.extract(r"(\d+)[a-z]|[A-Z]")
+    
+#     df['letter_after_number'] = "flat " + df['extract_letter'] + " " + df['extract_number'] + " " + \
+#                                 df.loc[df['selected_rows'], col1].str.replace(r"\bflat\b", "", regex=True).str.replace(r"\d+([a-z]|[A-Z])", "", regex=True).map(str)
+    
+#     df["new_col"] = df[col1].copy()
+#     df.loc[df['selected_rows'], "new_col"] = df['letter_after_number']
+    
+#     return df['new_col']
 
 def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     ''' In references to basement, ground floor, first floor, second floor, and top floor
@@ -464,25 +473,37 @@ def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
     df["new_col"] = merge_series(df["new_col"], df['third_floor'])
     df["new_col"] = merge_series(df["new_col"], df['third3_floor'])
     df["new_col"] = merge_series(df["new_col"], df['top_floor'])
-    
-    #merge_columns(df, "new_col", col1, 'letter_after_number')
-    #merge_columns(df, "new_col", "new_col", 'basement')
-    #merge_columns(df, "new_col", "new_col", 'ground_floor')
-    #merge_columns(df, "new_col", "new_col", 'first_floor')
-    #merge_columns(df, "new_col", "new_col", 'first1_floor')
-    #merge_columns(df, "new_col", "new_col", 'ground_and_first_floor') 
-    #merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor') 
-    #merge_columns(df, "new_col", "new_col", 'basement_ground_and_first_floor2')
-    #merge_columns(df, "new_col", "new_col", 'second_floor')
-    #merge_columns(df, "new_col", "new_col", 'second2_floor')
-    #merge_columns(df, "new_col", "new_col", 'first_and_second_floor')
-    #merge_columns(df, "new_col", "new_col", 'ground_first_second_floor')
-    #merge_columns(df, "new_col", "new_col", 'third_floor')
-    #merge_columns(df, "new_col", "new_col", 'third3_floor')
-    #merge_columns(df, "new_col", "new_col", 'top_floor')
-    
+       
     return df['new_col']
 
+# def replace_floor_flat(df:PandasDataFrame, col1:PandasSeries) -> PandasSeries:
+#     '''Moves the word 'flat' to the front of addresses with floor references like basement, ground floor, etc.'''
+    
+#     floor_mapping = {
+#         'basement': 'basement',
+#         'ground floor': 'a',
+#         'first floor': 'b',
+#         'ground and first floor': 'ab',
+#         'basement ground and first floors': 'basementab',
+#         'second floor': 'c',
+#         'first and second floor': 'bc',
+#         '1st floor': 'b',
+#         '2nd floor': 'c',
+#         'ground and first and second floor': 'abc',
+#         'third floor': 'd',
+#         '3rd floor': 'd',
+#         'top floor': 'top'
+#     }
+    
+#     for key, value in floor_mapping.items():
+#         df[key] = f"flat {value} " + df[df[col1].str.lower().str.contains(fr"\b{key}\b")][col1].str.replace(r"\bflat\b", "", regex=True).str.replace(fr"\b{key}\b", "", regex=True).map(str)
+    
+#     df["new_col"] = df[col1].copy()
+    
+#     for key in floor_mapping.keys():
+#         df["new_col"] = merge_series(df["new_col"], df[key])
+    
+#     return df["new_col"]
 
 
 def remove_non_housing(df:PandasDataFrame, col1:PandasSeries) -> PandasDataFrame:

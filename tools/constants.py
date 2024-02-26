@@ -203,7 +203,7 @@ fuzzy_method = "jarowinkler"
 
 ''' Required overall match score for all columns to count as a match '''
 
-score_cut_off = 97.5 #98.7
+score_cut_off = 97.5 #98.7 # 
 
 # I set a higher score cut off for nnet street blocking based on empirical data. Under this match value I was seeing errors. This value (.99238) is hard coded in fuzzy_funcs.py, score_based_match function
 score_cut_off_nnet_street = score_cut_off # 99.238

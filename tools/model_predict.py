@@ -2,11 +2,11 @@ import tensorflow as tf
 import torch
 import pandas as pd
 import numpy as np
-from typing import TypeVar, Dict, List, Tuple
+from typing import Type, Dict, List, Tuple
 from datetime import datetime
 
-PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
-PandasSeries = TypeVar('pd.core.frame.Series')
+PandasDataFrame = Type[pd.DataFrame]
+PandasSeries = Type[pd.Series]
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
@@ -296,13 +296,19 @@ def post_predict_clean(predict_df, orig_search_df, ref_address_cols, search_df_k
 
     predict_df = predict_df.rename(columns={"Postcode":"Postcode_predict"})
 
-    orig_search_df_pc = orig_search_df[["postcode"]].rename(columns={"postcode":"Postcode"}).reset_index().drop("index", axis=1)
+    #orig_search_df.to_csv("orig_search_df_pre_predict.csv")
 
-    predict_df = pd.concat([predict_df, orig_search_df_pc], axis = 1)
+    orig_search_df_pc = orig_search_df[[search_df_key_field, "postcode"]].rename(columns={"postcode":"Postcode"}).reset_index(drop=True)
+    predict_df = predict_df.merge(orig_search_df_pc, left_index=True, right_index=True, how = "left")
+
+    #predict_df = pd.concat([predict_df, orig_search_df_pc], axis = 1)
     
-    predict_df[search_df_key_field] = orig_search_df[search_df_key_field]
+    #predict_df[search_df_key_field] = orig_search_df[search_df_key_field]
 
     #predict_df = predict_df.drop("index", axis=1)
+
+    #predict_df['index'] = predict_df.index
+    predict_df[search_df_key_field] = predict_df[search_df_key_field].astype(str)
 
     #predict_df.to_csv("predict_end_of_clean.csv")
     

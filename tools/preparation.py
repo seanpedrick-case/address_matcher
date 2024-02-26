@@ -1,16 +1,16 @@
 import pandas as pd
-from typing import TypeVar, Dict, List, Tuple
+from typing import Type, Dict, List, Tuple
 from datetime import datetime
+import re
 
-PandasDataFrame = TypeVar('pd.core.frame.DataFrame')
-PandasSeries = TypeVar('pd.core.frame.Series')
+PandasDataFrame = Type[pd.DataFrame]
+PandasSeries = Type[pd.Series]
 MatchedResults = Dict[str,Tuple[str,int]]
 array = List[str]
 
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
-from tools.standardise import extract_postcode, remove_postcode, extract_street_name
 
 def prepare_search_address_string(
     search_str: str
@@ -160,8 +160,6 @@ def create_full_address(df):
     return df["full_address"]
 
 def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard_cols = True):
-    #, cols = ['SaoText','SaoStartNumber','SaoStartSuffix','SaoEndNumber','SaoEndSuffix','PaoText','PaoStartNumber',
-    #'PaoStartSuffix','PaoEndNumber','PaoEndSuffix','Street','PostTown','Postcode','UPRN']):
     
     if ('SaoText' in ref.columns) | ("Secondary_Name_LPI" in ref.columns): standard_cols = True
     else: standard_cols = False
@@ -171,16 +169,8 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     ref_address_cols_uprn.extend(new_join_col)
     ref_address_cols_uprn_w_ref = ref_address_cols_uprn.copy()
     ref_address_cols_uprn_w_ref.extend(["Reference file"])
-
-    #print(ref_address_cols_uprn_w_ref)
     
     ref_df = ref.copy()
-
-    # Drop duplicates in the key field - not necessary?
-    #ref_df = ref_df.drop_duplicates(new_join_col)
-
-    #print(ref_df)
-
       
     # In on-prem LPI db street has been excluded, so put this back in
     if ('Street' not in ref_df.columns) & ('Address_LPI' in ref_df.columns): 
@@ -230,7 +220,139 @@ def prepare_ref_address(ref, ref_address_cols, new_join_col = ['UPRN'], standard
     
     if 'Street' not in ref_df.columns:        
         ref_df['Street'] = ref_df["fulladdress"].apply(extract_street_name)
+
+    # Add index column
+        ref_df['ref_index'] = ref_df.index
         
     #ref_df.to_csv("ref_df_after_prep.csv", index = None)
 
     return ref_df
+
+
+def extract_postcode(df, col:str) -> PandasSeries:
+    '''
+    Extract a postcode from a string column in a dataframe
+    '''
+    postcode_series = df[col].str.upper().str.extract(pat = \
+    "(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2})|((GIR ?0A{2})\\b$)|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$)|(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$)")
+    
+    return postcode_series
+
+
+# Remove addresses with no numbers in at all - too high a risk of badly assigning an address
+def check_no_number_addresses(df, in_address_series) -> PandasSeries:
+    '''
+    Highlight addresses from a pandas df where there are no numbers in the address.
+    '''
+    df["in_address_series_temp"] = df[in_address_series].str.lower()
+
+    no_numbers_series = df["in_address_series_temp"].str.contains("^(?!.*\d+).*$", regex=True)
+
+    df.loc[no_numbers_series == True, 'Excluded from search'] = "Excluded - no numbers in address"
+
+    df = df.drop("in_address_series_temp", axis = 1)
+
+    #print(df[["full_address", "Excluded from search"]])
+
+    return df
+
+
+def remove_postcode(df, col:str) -> PandasSeries:
+    '''
+    Remove a postcode from a string column in a dataframe
+    '''
+    address_series_no_pcode = df[col].str.upper().str.replace(\
+    "\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2}|GIR ?0A{2})\\b$|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$|\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$","", regex=True).str.lower()
+    
+    return address_series_no_pcode
+
+def extract_street_name(address:str) -> str:
+    """
+    Extracts the street name from the given address.
+
+    Args:
+        address (str): The input address string.
+
+    Returns:
+        str: The extracted street name, or an empty string if no match is found.
+
+    Examples:
+        >>> address1 = "1 Ash Park Road SE54 3HB"
+        >>> extract_street_name(address1)
+        'Ash Park Road'
+
+        >>> address2 = "Flat 14 1 Ash Park Road SE54 3HB"
+        >>> extract_street_name(address2)
+        'Ash Park Road'
+
+        >>> address3 = "123 Main Blvd"
+        >>> extract_street_name(address3)
+        'Main Blvd'
+
+        >>> address4 = "456 Maple AvEnUe"
+        >>> extract_street_name(address4)
+        'Maple AvEnUe'
+
+        >>> address5 = "789 Oak Street"
+        >>> extract_street_name(address5)
+        'Oak Street'
+    """
+    
+   
+    street_types = [
+        'Street', 'St', 'Boulevard', 'Blvd', 'Highway', 'Hwy', 'Broadway', 'Freeway',
+        'Causeway', 'Cswy', 'Expressway', 'Way', 'Walk', 'Lane', 'Ln', 'Road', 'Rd',
+        'Avenue', 'Ave', 'Circle', 'Cir', 'Cove', 'Cv', 'Drive', 'Dr', 'Parkway', 'Pkwy',
+        'Park', 'Court', 'Ct', 'Square', 'Sq', 'Loop', 'Place', 'Pl', 'Parade', 'Estate',
+        'Alley', 'Arcade','Avenue', 'Ave','Bay','Bend','Brae','Byway','Close','Corner','Cove',
+        'Crescent', 'Cres','Cul-de-sac','Dell','Drive', 'Dr','Esplanade','Glen','Green','Grove','Heights', 'Hts',
+        'Mews','Parade','Path','Piazza','Promenade','Quay','Ridge','Row','Terrace', 'Ter','Track','Trail','View','Villas',
+        'Marsh', 'Embankment', 'Cut', 'Hill', 'Passage', 'Rise', 'Vale', 'Side'
+    ]
+
+    # Dynamically construct the regex pattern with all possible street types
+    street_types_pattern = '|'.join(rf"{re.escape(street_type)}" for street_type in street_types)
+
+    # The overall regex pattern to capture the street name
+    pattern = rf'(?:\d+\s+|\w+\s+\d+\s+|.*\d+[a-z]+\s+|.*\d+\s+)*(?P<street_name>[\w\s]+(?:{street_types_pattern}))'
+
+    def replace_postcode(address):
+        pattern = r'\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2}|GIR ?0A{2})\b$|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$|\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\b$'
+        return re.sub(pattern, "", address)
+
+    
+    modified_address = replace_postcode(address.upper())
+    #print(modified_address)
+    #print(address)
+       
+    # Perform a case-insensitive search
+    match = re.search(pattern, modified_address, re.IGNORECASE)
+
+    if match:
+        street_name = match.group('street_name')
+        return street_name.strip()
+    else:
+        return ""
+    
+    
+    # Exclude non-postal addresses
+def remove_non_postal(df, in_address_series):
+    '''
+    Highlight non-postal addresses from a polars df where a string series that contain specific substrings
+    indicating non-postal addresses like 'garage', 'parking', 'shed', etc.
+    '''
+    df["in_address_series_temp"] = df[in_address_series].str.lower()
+
+    garage_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bgarage\\b|\\bgarages\\b)", regex=True)
+    parking_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bparking\\b)", regex=True)
+    shed_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bshed\\b|\\bsheds\\b)", regex=True)
+    bike_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbike\\b|\\bbikes\\b)", regex=True)
+    bicycle_store_address_series = df["in_address_series_temp"].str.contains("(?i)(?:\\bbicycle store\\b|\\bbicycle store\\b)", regex=True)
+
+    non_postal_series = (garage_address_series | parking_address_series | shed_address_series | bike_address_series | bicycle_store_address_series)
+    
+    df.loc[non_postal_series == True, 'Excluded from search'] = "Excluded - non-postal address"
+
+    df = df.drop("in_address_series_temp", axis = 1)
+
+    return df

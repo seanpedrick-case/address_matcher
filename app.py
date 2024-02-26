@@ -1,10 +1,5 @@
 # Load in packages, variables for fuzzy matching
 import os
-
-# Need to overwrite version of gradio present in Huggingface spaces as it doesn't have like buttons/avatars (Oct 2023)
-#os.system("pip uninstall -y gradio")
-#os.system("pip install gradio==4.50.0")
-
 from datetime import datetime
 from pathlib import Path
 import time
@@ -22,10 +17,10 @@ diagnostics_folder = base_folder/"Diagnostics/"
 prep_folder = base_folder/"Helper functions/"
 
 from tools.constants import *
-from tools import matcher_funcs
-from tools import gradio
+from tools.matcher_funcs import load_matcher_data, run_match_batch, combine_two_matches, create_match_summary
+from tools.gradio import initial_data_load
 
-def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing, InitMatch = InitMatch):  
+def run_matcher(in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, InitMatch = InitMatch):  
     '''
     Split search and reference data into batches. Loop and run through the match script.
     '''
@@ -33,11 +28,12 @@ def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in
     overall_tic = time.perf_counter()    
 
     # Load in initial data
-    InitMatch = matcher_funcs.load_matcher_data(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing, InitMatch)
+    InitMatch = load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, InitMatch)
 
-    if len(InitMatch.search_df) == 0:
-        print("Nothing to match!")
-        return "Nothing to match!", InitMatch
+    if InitMatch.search_df.empty:
+        out_message = "Nothing to match!"
+        print(out_message)
+        return out_message, [InitMatch.results_orig_df_name, InitMatch.match_outputs_name]
 
     # Determine length of search df to create batches to send through the functions.
     
@@ -66,9 +62,9 @@ def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in
         BatchMatch.search_df_not_matched = BatchMatch.search_df_not_matched.iloc[row_range]
 
         # TURN ALL THE BELOW INTO A FUNCTION AND RUN THROUGH THE LOOP
-        summary_of_summaries, BatchMatch_out = matcher_funcs.run_match_batch(BatchMatch, n, len(batch_ranges))
+        summary_of_summaries, BatchMatch_out = run_match_batch(BatchMatch, n, len(batch_ranges))
 
-        OutputMatch = matcher_funcs.combine_two_matches(OutputMatch, BatchMatch_out, "All up to and including batch " + str(n+1))
+        OutputMatch = combine_two_matches(OutputMatch, BatchMatch_out, "All up to and including batch " + str(n+1))
 
     
     overall_toc = time.perf_counter()
@@ -82,27 +78,31 @@ def run_matcher(in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in
     fuzzy_not_std_output = OutputMatch.match_results_output.copy()
     fuzzy_not_std_output_mask = ~(fuzzy_not_std_output["match_method"].str.contains("Fuzzy match")) | (fuzzy_not_std_output["standardised_address"] == True)
     fuzzy_not_std_output.loc[fuzzy_not_std_output_mask, "full_match"] = False
-    fuzzy_not_std_summary = matcher_funcs.create_match_summary(fuzzy_not_std_output, "Fuzzy not standardised")
+    fuzzy_not_std_summary = create_match_summary(fuzzy_not_std_output, "Fuzzy not standardised")
 
     fuzzy_std_output = OutputMatch.match_results_output.copy()
     fuzzy_std_output_mask = fuzzy_std_output["match_method"].str.contains("Fuzzy match")
     fuzzy_std_output.loc[fuzzy_std_output_mask == False, "full_match"] = False
-    fuzzy_std_summary = matcher_funcs.create_match_summary(fuzzy_std_output, "Fuzzy standardised")
+    fuzzy_std_summary = create_match_summary(fuzzy_std_output, "Fuzzy standardised")
 
     nnet_std_output = OutputMatch.match_results_output.copy()
-    nnet_std_summary = matcher_funcs.create_match_summary(nnet_std_output, "Neural net standardised")
-
+    nnet_std_summary = create_match_summary(nnet_std_output, "Neural net standardised")
 
     final_summary = fuzzy_not_std_summary + "\n" + fuzzy_std_summary + "\n" + nnet_std_summary + "\n" + time_out
 
-
     return final_summary, [OutputMatch.results_orig_df_name, OutputMatch.match_outputs_name]
 
-''' Create the gradio interface '''
+# Create the gradio interface
 
 block = gr.Blocks(theme = gr.themes.Base())
 
 with block:
+
+    data_state = gr.State(pd.DataFrame())
+    ref_data_state = gr.State(pd.DataFrame())
+    results_data_state = gr.State(pd.DataFrame())
+    ref_results_data_state =gr.State(pd.DataFrame())
+
     gr.Markdown(
     """
     # Address matcher
@@ -141,16 +141,21 @@ with block:
         output_summary = gr.Textbox(label="Output summary")
         output_file = gr.File(label="Output file")
     
-    # Updates to components    
-    in_file.upload(fn=gradio.put_columns_in_df, inputs=[in_file], outputs=[in_colnames, in_existing])
-    in_ref.upload(fn=gradio.put_columns_in_df, inputs=[in_ref], outputs=[in_refcol, in_joincol])      
+    # Updates to components
+    in_file.upload(fn = initial_data_load, inputs=[in_file], outputs=[output_summary, in_colnames, in_existing, data_state, results_data_state])
+    in_ref.upload(fn = initial_data_load, inputs=[in_ref], outputs=[output_summary, in_refcol, in_joincol, ref_data_state, ref_results_data_state])      
 
-    #in_colnames.change(gradio.dummy_function, in_colnames, None)
-    #in_colnames.change(gradio.dummy_function, in_existing, None)
-    #in_colnames.change(gradio.dummy_function, in_refcol, None)
-    #in_colnames.change(gradio.dummy_function, in_joincol, None)
-
-    match_btn.click(fn=run_matcher, inputs=[in_text, in_file, in_ref, in_colnames, in_refcol, in_joincol, in_existing],
+    match_btn.click(fn = run_matcher, inputs=[in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing],
                     outputs=[output_summary, output_file], api_name="address")
     
-block.queue().launch(debug=True)#, server_name="0.0.0.0", ssl_verify=False)
+# Simple run for HF spaces or local on your computer
+block.queue().launch(server_name="0.0.0.0") # debug=True
+
+# Download OpenSSL from here: 
+# Running on local server with https: https://discuss.huggingface.co/t/how-to-run-gradio-with-0-0-0-0-and-https/38003 or https://dev.to/rajshirolkar/fastapi-over-https-for-development-on-windows-2p7d
+#block.queue().launch(ssl_verify=False, share=False, debug=False, server_name="0.0.0.0",server_port=443,
+#                     ssl_certfile="cert.pem", ssl_keyfile="key.pem") # port 443 for https. Certificates currently not valid
+
+# Running on local server without https
+#block.queue().launch(server_name="0.0.0.0", server_port=7861, ssl_verify=False)
+
