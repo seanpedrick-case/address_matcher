@@ -4,6 +4,7 @@
 *.csv
 *.pem
 *.pkl
+nnet_model/*
 test/*
 deprecated_models/*
 .ipynb_checkpoints/*

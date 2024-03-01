@@ -5,5 +5,6 @@
 *.pem
 *.pkl
 test/*
+nnet_model/*
 deprecated_models/*
 .ipynb_checkpoints/*
