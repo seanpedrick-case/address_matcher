@@ -149,7 +149,7 @@ with block:
                     outputs=[output_summary, output_file], api_name="address")
     
 # Simple run for HF spaces or local on your computer
-block.queue().launch(server_name="0.0.0.0") # debug=True
+block.queue().launch(server_name="0.0.0.0", root_path="/address_match") # debug=True
 
 # Download OpenSSL from here: 
 # Running on local server with https: https://discuss.huggingface.co/t/how-to-run-gradio-with-0-0-0-0-and-https/38003 or https://dev.to/rajshirolkar/fastapi-over-https-for-development-on-windows-2p7d

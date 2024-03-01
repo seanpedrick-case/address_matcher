@@ -4,12 +4,13 @@ WORKDIR /src
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user
 # Switch to the "user" user
 USER user
+
 # Set home to the user's home directory
 ENV HOME=/home/user \
 	PATH=/home/user/.local/bin:$PATH \
@@ -19,6 +20,7 @@ ENV HOME=/home/user \
 	GRADIO_NUM_PORTS=1 \
 	GRADIO_SERVER_NAME=0.0.0.0 \
 	GRADIO_THEME=huggingface \
+	GRADIO_ROOT_PATH=/address-match \
 	SYSTEM=spaces
  
 # Set the working directory to the user's home directory
