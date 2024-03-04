@@ -7,9 +7,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 # Set up a new user named "user" with user ID 1000
-RUN useradd -m -u 1000 user
+#RUN useradd -m -u 1000 user
 # Switch to the "user" user
-USER user
+#USER user
 
 # Set home to the user's home directory
 ENV HOME=/home/user \
@@ -27,6 +27,7 @@ ENV HOME=/home/user \
 WORKDIR $HOME/app
 
 # Copy the current directory contents into the container at $HOME/app setting the owner to the user
-COPY --chown=user . $HOME/app
+#COPY --chown=user . $HOME/app
+COPY . $HOME/app
 
 CMD ["python", "app.py"]
