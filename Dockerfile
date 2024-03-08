@@ -21,7 +21,7 @@ ENV HOME=/home/user \
 	GRADIO_SERVER_NAME=0.0.0.0 \
 	GRADIO_SERVER_PORT=7861 \
 	GRADIO_THEME=huggingface \
-	GRADIO_ROOT_PATH=/address-match \
+	#GRADIO_ROOT_PATH=/address-match \
 	SYSTEM=spaces
  
 # Set the working directory to the user's home directory
