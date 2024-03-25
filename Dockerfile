@@ -13,6 +13,9 @@ RUN useradd -m -u 1000 user
 # Create the temp files directory and set its permissions
 RUN mkdir -p /home/user/tmp && chown -R user:user /home/user/tmp
 
+# Change ownership of /home/user directory
+RUN chown -R user:user /home/user
+
 # Switch to the "user" user
 USER user
 
