@@ -11,6 +11,8 @@ array = List[str]
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
+from tools.constants import score_cut_off_nnet_street
+
 # ## Recordlinkage matching functions
 def compute_match(predict_df_search, ref_search, orig_search_df, matching_variables,
                       text_columns, blocker_column,  weights, fuzzy_method):
@@ -270,7 +272,7 @@ def create_matched_results_nnet(scoresSBM_best, search_df_key_field, orig_search
 
     return matched_output_SBM
 
-def score_based_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method, score_cut_off, search_df_key_field, standardise, new_join_col):
+def score_based_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method, score_cut_off, search_df_key_field, standardise, new_join_col, score_cut_off_nnet_street=score_cut_off_nnet_street):
     
     scoresSBM = compute_match(predict_df_search, ref_search, orig_search_df, matching_variables, text_columns, blocker_column,  weights, fuzzy_method)   
     
@@ -287,8 +289,8 @@ def score_based_match(predict_df_search, ref_search, orig_search_df, matching_va
 
     #scoresSBM_search_m_j.to_csv("scoresSBM_search_m_j.csv")
 
-    # When blocking by street, may to have an increased threshold as this is more prone to making mistakes (not currently higher than regular cutoff)
-    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= 99)
+    # When blocking by street, may to have an increased threshold as this is more prone to making mistakes
+    if blocker_column[0] == "Street": scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off_nnet_street)
 
     else: scoresSBM_search_m_j['full_match_score_based'] = (scoresSBM_search_m_j['score_perc'] >= score_cut_off)
     

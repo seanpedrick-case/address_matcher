@@ -12,6 +12,8 @@ array = List[str]
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
 
+from tools.constants import no_number_fuzzy_match_limit
+
 def string_match_array(to_match:array, choices:array,
                       index_name:str, matched_name:str) -> PandasDataFrame:
     
@@ -183,7 +185,7 @@ def _create_fuzzy_match_results_output(results, search_df_prep_join, ref_df, ref
         
         return match_results_output, compare_all_candidates, diag_shortlist, diag_best_match
 
-def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address", resolve_tie_breaks=True):
+def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address", resolve_tie_breaks=True, no_number_fuzzy_match_limit=no_number_fuzzy_match_limit):
         '''
         Create a shortlist of the best matches from a list of suggested matches
         '''
@@ -200,8 +202,11 @@ def create_diag_shortlist(diag_j, matched_col, fuzzy_match_limit, blocker_col, f
         # Fuzzy match limit for records with no numbers in it is 0.95 or the provided fuzzy_match_limit, whichever is higher
         diag_shortlist["fuzzy_score_match"] = diag_shortlist[fuzzy_col] >= fuzzy_match_limit
 
-        if fuzzy_match_limit > 95: no_number_fuzzy_match_limit = fuzzy_match_limit
-        else: no_number_fuzzy_match_limit = fuzzy_match_limit
+        # If no numbers in the address, the match limit is set to 100. This is now defined in constants
+        #if fuzzy_match_limit > 95: no_number_fuzzy_match_limit = fuzzy_match_limit
+        #else: no_number_fuzzy_match_limit = fuzzy_match_limit
+
+        no_number_fuzzy_match_limit = no_number_fuzzy_match_limit
 
         ### Count number of numbers in search string
         diag_shortlist["number_count_search_string"] =  diag_shortlist[search_mod_address].str.count(r'\d')
