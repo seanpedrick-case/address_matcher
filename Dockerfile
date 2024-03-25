@@ -9,6 +9,10 @@ RUN pip install -r requirements.txt
 
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user
+
+# Create the temp files directory and set its permissions
+RUN mkdir -p /home/user/tmp && chown -R user:user /home/user/tmp
+
 # Switch to the "user" user
 USER user
 
@@ -22,6 +26,7 @@ ENV HOME=/home/user \
 	GRADIO_SERVER_NAME=0.0.0.0 \
 	GRADIO_SERVER_PORT=7861 \
 	GRADIO_THEME=huggingface \
+	GRADIO_TEMP_DIR=$HOME/user/tmp \
 	#GRADIO_ROOT_PATH=/address-match \
 	SYSTEM=spaces
  
