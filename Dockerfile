@@ -16,6 +16,9 @@ RUN chown -R user:user /home/user
 # Create the temp files directory and set its permissions
 RUN mkdir -p /home/user/tmp && chown -R user:user /home/user/tmp
 
+# Create the app directory and set its permissions
+RUN mkdir -p /home/user/app && chown -R user:user /home/user/app
+
 # Switch to the "user" user
 USER user
 
