@@ -395,6 +395,8 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
 
         # For the neural net model to work, the llpg columns have to be in the LPI format (e.g. with columns SaoText, SaoStartNumber etc. Here we check if we have that format.
 
+        
+
         if 'Address_LPI' in Matcher.ref_df.columns:
             Matcher.ref_df = Matcher.ref_df.rename(columns={
             "Name_LPI": "PaoText",    
@@ -416,28 +418,29 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
         #print("Matcher reference file: ", Matcher.ref_df['Reference file'])
             
         # Check if the source is the Addressbase places API
-        if Matcher.ref_df.iloc[0]['Reference file'] == 'API' or '_api_' in Matcher.ref_df.iloc[0]['Reference file']:
-            Matcher.ref_df = Matcher.ref_df.rename(columns={
-            "ORGANISATION_NAME": "Organisation",
-            "ORGANISATION": "Organisation",
-            "PAO_TEXT": "PaoText",    
-            "PAO_START_NUMBER": "PaoStartNumber",
-            "PAO_START_SUFFIX":"PaoStartSuffix",
-            "PAO_END_NUMBER":"PaoEndNumber",
-            "PAO_END_SUFFIX":"PaoEndSuffix",
-            "STREET_DESCRIPTION":"Street",
-            
-            "SAO_TEXT":"SaoText",
-            "SAO_START_NUMBER":"SaoStartNumber",
-            "SAO_START_SUFFIX":"SaoStartSuffix",
-            "SAO_END_NUMBER":"SaoEndNumber",
-            "SAO_END_SUFFIX":"SaoEndSuffix",
-            
-            "POSTCODE_LOCATOR":"Postcode",
-            "TOWN_NAME":"PostTown",
-            "LOCALITY_NAME":"LocalityName",
-            "ADMINISTRATIVE_AREA":"AdministrativeArea"
-        }, errors="ignore")
+        if len(Matcher.ref_df) > 0:
+            if Matcher.ref_df.iloc[0]['Reference file'] == 'API' or '_api_' in Matcher.ref_df.iloc[0]['Reference file']:
+                    Matcher.ref_df = Matcher.ref_df.rename(columns={
+                    "ORGANISATION_NAME": "Organisation",
+                    "ORGANISATION": "Organisation",
+                    "PAO_TEXT": "PaoText",    
+                    "PAO_START_NUMBER": "PaoStartNumber",
+                    "PAO_START_SUFFIX":"PaoStartSuffix",
+                    "PAO_END_NUMBER":"PaoEndNumber",
+                    "PAO_END_SUFFIX":"PaoEndSuffix",
+                    "STREET_DESCRIPTION":"Street",
+                    
+                    "SAO_TEXT":"SaoText",
+                    "SAO_START_NUMBER":"SaoStartNumber",
+                    "SAO_START_SUFFIX":"SaoStartSuffix",
+                    "SAO_END_NUMBER":"SaoEndNumber",
+                    "SAO_END_SUFFIX":"SaoEndSuffix",
+                    
+                    "POSTCODE_LOCATOR":"Postcode",
+                    "TOWN_NAME":"PostTown",
+                    "LOCALITY_NAME":"LocalityName",
+                    "ADMINISTRATIVE_AREA":"AdministrativeArea"
+                }, errors="ignore")
     
         # Check ref_df file format
         # If standard format, or it's an API call
