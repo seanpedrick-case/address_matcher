@@ -366,6 +366,10 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
         if not ref_data_state.empty:
             Matcher.ref_df = ref_data_state
             Matcher.ref_name = get_file_name(in_ref[0].name)
+
+            if not Matcher.ref_name:
+                    Matcher.ref_name = '' 
+
             Matcher.ref_df["Reference file"] = Matcher.ref_name
 
         # Otherwise check for file name and load in. If nothing found, fail
@@ -382,6 +386,8 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
 
             else:
                 Matcher.ref_name = get_file_name(in_ref[0].name)
+                if not Matcher.ref_name:
+                    Matcher.ref_name = '' 
 
                 # Concatenate all in reference files together
                 for ref_file in in_ref:
@@ -420,7 +426,7 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
         # Check if the source is the Addressbase places API
         if Matcher.ref_df is not None and len(Matcher.ref_df) > 0:
             first_row = Matcher.ref_df.iloc[0]
-            print(first_row)
+            #print(first_row)
             if first_row is not None and 'Reference file' in first_row:
                 if first_row['Reference file'] == 'API' or '_api_' in first_row['Reference file']:
                     Matcher.ref_df = Matcher.ref_df.rename(columns={
