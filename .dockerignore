@@ -1,0 +1,15 @@
+*.ipynb
+*checkpoint.py
+*.pyc
+*.csv
+*.parquet
+*.pem
+*.pkl
+*.env
+*.zip
+test/*
+nnet_model/*
+deprecated_models/*
+.ipynb_checkpoints/*
+orchestration/*
+.vscode/*
