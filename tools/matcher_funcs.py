@@ -418,7 +418,7 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
         #print("Matcher reference file: ", Matcher.ref_df['Reference file'])
             
         # Check if the source is the Addressbase places API
-        if len(Matcher.ref_df) > 0:
+        if Matcher.ref_df is not None and len(Matcher.ref_df) > 0 and 'Reference file' in Matcher.ref_df.columns:
             if Matcher.ref_df.iloc[0]['Reference file'] == 'API' or '_api_' in Matcher.ref_df.iloc[0]['Reference file']:
                     Matcher.ref_df = Matcher.ref_df.rename(columns={
                     "ORGANISATION_NAME": "Organisation",
