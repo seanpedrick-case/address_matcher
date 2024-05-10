@@ -474,185 +474,189 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
 
         return Matcher
 
-def check_match_data_filter(Matcher, data_state, results_data_state, in_file, in_text, in_colnames, in_joincol, in_existing, in_api):
-        # Assign join field if not known
-        if not Matcher.search_df_key_field:
-                Matcher.search_df_key_field = "index"
+def check_match_data_filter(Matcher:MatcherClass, data_state:PandasDataFrame, results_data_state:PandasDataFrame, in_file:List[str], in_text:str, in_colnames:List[str], in_joincol:List[str], in_existing:List[str], in_api:List[str]):
+    '''
+    Check if data to be matched exists. Filter it according to which records are relevant in the reference dataset
+    '''
 
-        # Set search address cols as entered column names
-        #print("In colnames in check match data: ", in_colnames)
-        Matcher.search_address_cols = in_colnames
+    # Assign join field if not known
+    if not Matcher.search_df_key_field:
+            Matcher.search_df_key_field = "index"
 
-        # Check if data loaded already and bring it in
-        if not data_state.empty:
+    # Set search address cols as entered column names
+    #print("In colnames in check match data: ", in_colnames)
+    Matcher.search_address_cols = in_colnames
+
+    # Check if data loaded already and bring it in
+    if not data_state.empty:
+        
+        Matcher.search_df = data_state        
+
+        Matcher.search_df['index'] = Matcher.search_df.reset_index().index
+
+    else:        
+        Matcher.search_df = pd.DataFrame()       
+
+    # If someone has just entered open text, just load this instead
+    if in_text:
+        Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col = prepare_search_address_string(in_text) 
+
+    # If two matcher files are loaded in, the algorithm will combine them together
+    if Matcher.search_df.empty and in_file:
+        output_message, drop1, drop2, Matcher.search_df, results_data_state = initial_data_load(in_file)
+
+        file_list = [string.name for string in in_file]
+        data_file_names = [string for string in file_list if "results_on_orig" not in string.lower()]
+        
+        #print("Data file names: ", data_file_names)
+        Matcher.file_name = get_file_name(data_file_names[0])
+        
+        # search_df makes column to use as index
+        Matcher.search_df['index'] = Matcher.search_df.index
+
+
+    # Join previously created results file onto search_df if previous results file exists
+    if not results_data_state.empty:
+
+        print("Joining on previous results file")
+        Matcher.results_on_orig_df = results_data_state.copy()
+        Matcher.search_df = Matcher.search_df.merge(results_data_state, on = "index", how = "left") 
+
+    # If no join on column suggested, assume the user wants the UPRN
+    print("in_joincol: ", in_joincol)
+
+    if not in_joincol:
+        Matcher.new_join_col = ['UPRN']
+        #Matcher.new_join_col = Matcher.new_join_col#[0]
+        
+    else:  
+        Matcher.new_join_col = in_joincol
+        #Matcher.new_join_col = Matcher.new_join_col
+
+    # Extract the column names from the input data
+    #print("In colnames: ", in_colnames)
+
+    print("Matcher.in_joincol: ", Matcher.new_join_col)
+
+    if len(in_colnames) > 1:
+        Matcher.search_postcode_col = [in_colnames[-1]]
+
+        #print("Postcode col: ", Matcher.search_postcode_col)
+        
+    elif len(in_colnames) == 1:
+        Matcher.search_df['full_address_postcode'] = Matcher.search_df[in_colnames[0]]
+        Matcher.search_postcode_col = ['full_address_postcode']
+        Matcher.search_address_cols.append('full_address_postcode')
+
+    # Check for column that indicates there are existing matches. The code will then search this column for entries, and will remove them from the data to be searched
+    Matcher.existing_match_cols = in_existing
+
+    if in_existing:
+        if "Matched with reference address" in Matcher.search_df.columns:
+            Matcher.search_df.loc[~Matcher.search_df[in_existing].isna(), "Matched with reference address"] = True
+        else: Matcher.search_df["Matched with reference address"] = ~Matcher.search_df[in_existing].isna()
             
-            Matcher.search_df = data_state
+    print("Shape of search_df before filtering is: ", Matcher.search_df.shape)
+
+    ### Filter addresses to those with length > 0
+    zero_length_search_df = Matcher.search_df.copy()[Matcher.search_address_cols]
+    zero_length_search_df = zero_length_search_df.fillna('').infer_objects(copy=False)
+    Matcher.search_df["address_cols_joined"] = zero_length_search_df.astype(str).sum(axis=1).str.strip()
+
+    length_more_than_0 = Matcher.search_df["address_cols_joined"].str.len() > 0
+
+
+    ### Filter addresses to match to postcode areas present in both search_df and ref_df_cleaned only (postcode without the last three characters). Only run if API call is false. When the API is called, relevant addresses and postcodes should be brought in by the API.
+    if not in_api:
+        if Matcher.filter_to_lambeth_pcodes == True:
+            Matcher.search_df["postcode_search_area"] = Matcher.search_df[Matcher.search_postcode_col[0]].str.strip().str.upper().str.replace(" ", "").str[:-2]
+            Matcher.ref_df["postcode_search_area"] = Matcher.ref_df["Postcode"].str.strip().str.upper().str.replace(" ", "").str[:-2]
+            
+            unique_ref_pcode_area = (Matcher.ref_df["postcode_search_area"][Matcher.ref_df["postcode_search_area"].str.len() > 3]).unique()
+            postcode_found_in_search = Matcher.search_df["postcode_search_area"].isin(unique_ref_pcode_area)
+
+            Matcher.search_df["Excluded from search"] = "Included in search"
+            Matcher.search_df.loc[~(postcode_found_in_search), "Excluded from search"] = "Postcode area not found"
+            Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
+            Matcher.pre_filter_search_df = Matcher.search_df.copy()#.drop(["index", "level_0"], axis = 1, errors = "ignore").reset_index()
+            Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("address_cols_joined", axis = 1)
+
+            Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0)]
+            Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0)]
 
             
-
-            Matcher.search_df['index'] = Matcher.search_df.index
-
-        else:        
-            Matcher.search_df = pd.DataFrame()       
-
-        # If someone has just entered open text, just load this instead
-        if in_text:
-            Matcher.search_df, Matcher.search_df_key_field, Matcher.search_address_cols, Matcher.search_postcode_col = prepare_search_address_string(in_text) 
-
-        # If two matcher files are loaded in, the algorithm will combine them together
-        if Matcher.search_df.empty and in_file:
-            output_message, drop1, drop2, Matcher.search_df, results_data_state = initial_data_load(in_file)
-
-            file_list = [string.name for string in in_file]
-            data_file_names = [string for string in file_list if "results_on_orig" not in string.lower()]
-            
-            #print("Data file names: ", data_file_names)
-            Matcher.file_name = get_file_name(data_file_names[0])
-            
-            # search_df makes column to use as index
-            Matcher.search_df['index'] = Matcher.search_df.index
-
-
-        # Join previously created results file onto search_df if previous results file exists
-        if not results_data_state.empty:
-
-            print("Joining on previous results file")
-            Matcher.results_on_orig_df = results_data_state.copy()
-            Matcher.search_df = Matcher.search_df.merge(results_data_state, on = "index", how = "left") 
-
-        # If no join on column suggested, assume the user wants the UPRN
-        # print("in_joincol: ", in_joincol)
-
-        if not in_joincol:
-            Matcher.new_join_col = ['UPRN']
-            #Matcher.new_join_col = Matcher.new_join_col#[0]
-            
-        else:  
-            Matcher.new_join_col = in_joincol
-            #Matcher.new_join_col = Matcher.new_join_col
-
-        # Extract the column names from the input data
-        print("In colnames: ", in_colnames)
-
-        if len(in_colnames) > 1:
-            Matcher.search_postcode_col = [in_colnames[-1]]
-
-            print("Postcode col: ", Matcher.search_postcode_col)
-            
-        elif len(in_colnames) == 1:
-            Matcher.search_df['full_address_postcode'] = Matcher.search_df[in_colnames[0]]
-            Matcher.search_postcode_col = ['full_address_postcode']
-            Matcher.search_address_cols.append('full_address_postcode')
-
-        # Check for column that indicates there are existing matches. The code will then search this column for entries, and will remove them from the data to be searched
-        Matcher.existing_match_cols = in_existing
-
-        if in_existing:
+            # Exclude records that have already been matched separately, i.e. if 'Matched with reference address' column exists, and has trues in it
             if "Matched with reference address" in Matcher.search_df.columns:
-                Matcher.search_df.loc[~Matcher.search_df[in_existing].isna(), "Matched with reference address"] = True
-            else: Matcher.search_df["Matched with reference address"] = ~Matcher.search_df[in_existing].isna()
-              
-        print("Shape of search_df before filtering is: ", Matcher.search_df.shape)
-
-        ### Filter addresses to those with length > 0
-        zero_length_search_df = Matcher.search_df.copy()[Matcher.search_address_cols]
-        zero_length_search_df = zero_length_search_df.fillna('').infer_objects(copy=False)
-        Matcher.search_df["address_cols_joined"] = zero_length_search_df.astype(str).sum(axis=1).str.strip()
-
-        length_more_than_0 = Matcher.search_df["address_cols_joined"].str.len() > 0
-    
- 
-        ### Filter addresses to match to postcode areas present in both search_df and ref_df_cleaned only (postcode without the last three characters). Only run if API call is false. When the API is called, relevant addresses and postcodes should be brought in by the API.
-        if not in_api:
-            if Matcher.filter_to_lambeth_pcodes == True:
-                Matcher.search_df["postcode_search_area"] = Matcher.search_df[Matcher.search_postcode_col[0]].str.strip().str.upper().str.replace(" ", "").str[:-2]
-                Matcher.ref_df["postcode_search_area"] = Matcher.ref_df["Postcode"].str.strip().str.upper().str.replace(" ", "").str[:-2]
+                previously_matched = Matcher.pre_filter_search_df["Matched with reference address"] == True 
+                Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
                 
-                unique_ref_pcode_area = (Matcher.ref_df["postcode_search_area"][Matcher.ref_df["postcode_search_area"].str.len() > 3]).unique()
-                postcode_found_in_search = Matcher.search_df["postcode_search_area"].isin(unique_ref_pcode_area)
+                Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0) | (previously_matched)]
+                Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0) & ~(previously_matched)]
 
-                Matcher.search_df["Excluded from search"] = "Included in search"
-                Matcher.search_df.loc[~(postcode_found_in_search), "Excluded from search"] = "Postcode area not found"
-                Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
-                Matcher.pre_filter_search_df = Matcher.search_df.copy()#.drop(["index", "level_0"], axis = 1, errors = "ignore").reset_index()
-                Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("address_cols_joined", axis = 1)
-
+            else:
                 Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0)]
                 Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0)]
 
-                
-                # Exclude records that have already been matched separately, i.e. if 'Matched with reference address' column exists, and has trues in it
-                if "Matched with reference address" in Matcher.search_df.columns:
-                    previously_matched = Matcher.pre_filter_search_df["Matched with reference address"] == True 
-                    Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
-                    
-                    Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0) | (previously_matched)]
-                    Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0) & ~(previously_matched)]
+            print("Shape of ref_df before filtering is: ", Matcher.ref_df.shape)   
 
-                else:
-                    Matcher.excluded_df = Matcher.search_df.copy()[~(postcode_found_in_search) | ~(length_more_than_0)]
-                    Matcher.search_df = Matcher.search_df[(postcode_found_in_search) & (length_more_than_0)]
+            unique_search_pcode_area = (Matcher.search_df["postcode_search_area"]).unique()
+            postcode_found_in_ref = Matcher.ref_df["postcode_search_area"].isin(unique_search_pcode_area)
+            Matcher.ref_df = Matcher.ref_df[postcode_found_in_ref]
 
-                print("Shape of ref_df before filtering is: ", Matcher.ref_df.shape)   
-
-                unique_search_pcode_area = (Matcher.search_df["postcode_search_area"]).unique()
-                postcode_found_in_ref = Matcher.ref_df["postcode_search_area"].isin(unique_search_pcode_area)
-                Matcher.ref_df = Matcher.ref_df[postcode_found_in_ref]
-
-                Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("postcode_search_area", axis = 1)
-                Matcher.search_df = Matcher.search_df.drop("postcode_search_area", axis = 1)
-                Matcher.ref_df = Matcher.ref_df.drop("postcode_search_area", axis = 1)
-                Matcher.excluded_df = Matcher.excluded_df.drop("postcode_search_area", axis = 1)
-            else:
-                Matcher.pre_filter_search_df = Matcher.search_df.copy()
-                Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
-                
-                Matcher.excluded_df = Matcher.search_df[~(length_more_than_0)]
-                Matcher.search_df = Matcher.search_df[length_more_than_0]
- 
-
-        Matcher.search_df = Matcher.search_df.drop("address_cols_joined", axis = 1, errors="ignore")
-        Matcher.excluded_df = Matcher.excluded_df.drop("address_cols_joined", axis = 1, errors="ignore")
-
-        Matcher.search_df_not_matched = Matcher.search_df
-
-
-        # If this is for an API call, we need to convert the search_df address columns to one column now. This is so the API call can be made and the reference dataframe created.
-        if in_api:
-
-            if in_file:
-                output_message, drop1, drop2, df, results_data_state = initial_data_load(in_file)
-
-                file_list = [string.name for string in in_file]
-                data_file_names = [string for string in file_list if "results_on_orig" not in string.lower()]
+            Matcher.pre_filter_search_df = Matcher.pre_filter_search_df.drop("postcode_search_area", axis = 1)
+            Matcher.search_df = Matcher.search_df.drop("postcode_search_area", axis = 1)
+            Matcher.ref_df = Matcher.ref_df.drop("postcode_search_area", axis = 1)
+            Matcher.excluded_df = Matcher.excluded_df.drop("postcode_search_area", axis = 1)
+        else:
+            Matcher.pre_filter_search_df = Matcher.search_df.copy()
+            Matcher.search_df.loc[~(length_more_than_0), "Excluded from search"] = "Address length 0"
             
-                Matcher.file_name = get_file_name(data_file_names[0])
+            Matcher.excluded_df = Matcher.search_df[~(length_more_than_0)]
+            Matcher.search_df = Matcher.search_df[length_more_than_0]
 
+
+    Matcher.search_df = Matcher.search_df.drop("address_cols_joined", axis = 1, errors="ignore")
+    Matcher.excluded_df = Matcher.excluded_df.drop("address_cols_joined", axis = 1, errors="ignore")
+
+    Matcher.search_df_not_matched = Matcher.search_df
+
+
+    # If this is for an API call, we need to convert the search_df address columns to one column now. This is so the API call can be made and the reference dataframe created.
+    if in_api:
+
+        if in_file:
+            output_message, drop1, drop2, df, results_data_state = initial_data_load(in_file)
+
+            file_list = [string.name for string in in_file]
+            data_file_names = [string for string in file_list if "results_on_orig" not in string.lower()]
+        
+            Matcher.file_name = get_file_name(data_file_names[0])
+
+        else:
+            if in_text:
+                Matcher.file_name = in_text
             else:
-                if in_text:
-                    Matcher.file_name = in_text
-                else:
-                    Matcher.file_name = "API call"
+                Matcher.file_name = "API call"
 
-            # Exclude records that have already been matched separately, i.e. if 'Matched with reference address' column exists, and has trues in it
-            if in_existing:
-                print("Checking for previously matched records")
-                Matcher.pre_filter_search_df = Matcher.search_df.copy()
-                previously_matched = ~Matcher.pre_filter_search_df[in_existing].isnull()
-                Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
-                
-                Matcher.excluded_df = Matcher.search_df.copy()[~(length_more_than_0) | (previously_matched)]
-                Matcher.search_df = Matcher.search_df[(length_more_than_0) & ~(previously_matched)]
+        # Exclude records that have already been matched separately, i.e. if 'Matched with reference address' column exists, and has trues in it
+        if in_existing:
+            print("Checking for previously matched records")
+            Matcher.pre_filter_search_df = Matcher.search_df.copy()
+            previously_matched = ~Matcher.pre_filter_search_df[in_existing].isnull()
+            Matcher.pre_filter_search_df.loc[previously_matched, "Excluded from search"] = "Previously matched"
+            
+            Matcher.excluded_df = Matcher.search_df.copy()[~(length_more_than_0) | (previously_matched)]
+            Matcher.search_df = Matcher.search_df[(length_more_than_0) & ~(previously_matched)]
 
-            if type(Matcher.search_df) == str: search_df_cleaned, search_df_key_field, search_address_cols = prepare_search_address_string(Matcher.search_df)
-            else: search_df_cleaned = prepare_search_address(Matcher.search_df, Matcher.search_address_cols, Matcher.search_postcode_col, Matcher.search_df_key_field)
+        if type(Matcher.search_df) == str: search_df_cleaned, search_df_key_field, search_address_cols = prepare_search_address_string(Matcher.search_df)
+        else: search_df_cleaned = prepare_search_address(Matcher.search_df, Matcher.search_address_cols, Matcher.search_postcode_col, Matcher.search_df_key_field)
 
 
-            Matcher.search_df['full_address_postcode'] = search_df_cleaned["full_address"]
-            #Matcher.search_df = Matcher.search_df.reset_index(drop=True)
-            #Matcher.search_df.index.name = 'index'
+        Matcher.search_df['full_address_postcode'] = search_df_cleaned["full_address"]
+        #Matcher.search_df = Matcher.search_df.reset_index(drop=True)
+        #Matcher.search_df.index.name = 'index'
 
-        return Matcher
+    return Matcher
 
 def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, Matcher, in_api, in_api_key):
         '''
@@ -687,8 +691,8 @@ def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, 
         Matcher.match_outputs_name = "diagnostics_initial_" + today_rev + ".csv" 
         Matcher.results_orig_df_name = "results_initial_" + today_rev + ".csv" 
     
-        #Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
-        #Matcher.results_on_orig_df.to_csv(Matcher.results_orig_df_name, index = None)
+        Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
+        Matcher.results_on_orig_df.to_csv(Matcher.results_orig_df_name, index = None)
         
         return Matcher
 
@@ -809,7 +813,8 @@ def orchestrate_match_run(Matcher, standardise = False, nnet = False, file_stub=
                         Matcher.ref_df_after_stand,
                         Matcher.ref_df_after_full_stand,                        
                         Matcher.fuzzy_match_limit,
-                        Matcher.fuzzy_scorer_used)
+                        Matcher.fuzzy_scorer_used,
+                        Matcher.new_join_col)
             if match_results_output.empty: 
                 print("Match results empty")
                 Matcher.abort_flag = True
@@ -848,7 +853,8 @@ def orchestrate_match_run(Matcher, standardise = False, nnet = False, file_stub=
                     Matcher.search_df_cleaned,
                     Matcher.ref_df_after_stand,
                     Matcher.search_df_after_stand,
-                    Matcher.search_df_after_full_stand)
+                    Matcher.search_df_after_full_stand,
+                    Matcher.new_join_col)
             
             if match_results_output.empty: 
                 print("Match results empty")
@@ -886,7 +892,7 @@ def full_fuzzy_match(search_df:PandasDataFrame,
                      ref_df_after_full_stand:PandasDataFrame,                     
                      fuzzy_match_limit:float,
                      fuzzy_scorer_used:str,
-                     new_join_col:List[str]=["UPRN"],
+                     new_join_col:List[str],
                      fuzzy_search_addr_limit:float = 100,
                      filter_to_lambeth_pcodes:bool=False):
 
@@ -1048,7 +1054,7 @@ def full_nn_match(ref_address_cols:List[str],
                   ref_df_after_stand:PandasDataFrame,
                   search_df_after_stand:PandasDataFrame,
                   search_df_after_full_stand:PandasDataFrame,
-                  new_join_col:List=["UPRN"]):
+                  new_join_col:List[str]):
     '''
     Use a neural network model to partition 'search addresses' into consituent parts in the format of UK Ordnance Survey Land Property Identifier (LPI) addresses. These address components are compared individually against reference addresses in the same format to give an overall match score using the recordlinkage package.
     '''

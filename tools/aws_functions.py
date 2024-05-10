@@ -6,7 +6,7 @@ import os
 
 PandasDataFrame = Type[pd.DataFrame]
 
-bucket_name = 'address-matcher-data'
+bucket_name = os.environ['ADDRESS_MATCHER_BUCKET']
 
 try:
     session = boto3.Session(profile_name="default")

@@ -212,6 +212,10 @@ def _create_fuzzy_match_results_output(results, search_df_after_stand, ref_df_cl
         joined_ref_cols = ["fulladdress", "Reference file"]
         joined_ref_cols.extend(new_join_col)
 
+        print("joined_ref_cols: ", joined_ref_cols)
+        # Keep only columns that exist in reference dataset
+        joined_ref_cols = [col for col in joined_ref_cols if col in ref_df_cleaned.columns]
+
         match_results_output = pd.merge(match_results_output,ref_df_cleaned[joined_ref_cols].drop_duplicates("fulladdress"), how = "left", left_on = "reference_orig_address",right_on = "fulladdress").drop("fulladdress", axis = 1)
 
         # Convert long keys to string to avoid data loss
@@ -391,7 +395,7 @@ def join_to_orig_df(match_results_output:PandasDataFrame, search_df:PandasDataFr
                                         "reference_orig_address":"Reference matched address",
                                         "full_match":"Matched with reference address",
                                         'uprn':'UPRN'                                                                             
-                                     })
+                                     }, errors="ignore")
     
     ref_df_after_stand_cols = ["ref_index", "Reference matched address","Matched with reference address", "Reference file", search_df_key_field]
     ref_df_after_stand_cols.extend(new_join_col)
