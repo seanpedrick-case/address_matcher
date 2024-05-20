@@ -1,5 +1,6 @@
 import gradio as gr
 import pandas as pd
+import os
 
 def detect_file_type(filename):
     """Detect the file type based on its extension."""
@@ -51,6 +52,17 @@ def initial_data_load(in_file):
         
     return output_message, gr.Dropdown(choices=concat_choices), gr.Dropdown(choices=concat_choices), df, results_df
 
+def ensure_output_folder_exists(output_folder):
+    """Checks if the output folder exists, creates it if not."""
+
+    folder_name = output_folder
+
+    if not os.path.exists(folder_name):
+        # Create the folder if it doesn't exist
+        os.makedirs(folder_name)
+        print(f"Created the output folder.")
+    else:
+        print(f"The output folder already exists.")
 
 def dummy_function(in_colnames):
     """

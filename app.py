@@ -5,7 +5,7 @@ import gradio as gr
 import pandas as pd
 
 from tools.matcher_funcs import run_matcher
-from tools.gradio import initial_data_load
+from tools.gradio import initial_data_load, ensure_output_folder_exists
 from tools.aws_functions import load_data_from_aws
 
 import warnings
@@ -20,10 +20,9 @@ today_rev = datetime.now().strftime("%Y%m%d")
 
 # Base folder is where the code file is stored
 base_folder = Path(os.getcwd())
-input_folder = base_folder/"Input/"
-output_folder = base_folder/"Output/"
-diagnostics_folder = base_folder/"Diagnostics/"
-prep_folder = base_folder/"Helper functions/"
+output_folder = "output/"
+
+ensure_output_folder_exists(output_folder)
 
 # Create the gradio interface
 block = gr.Blocks(theme = gr.themes.Base())
