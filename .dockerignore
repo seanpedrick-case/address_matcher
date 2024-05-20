@@ -8,8 +8,8 @@
 *.env
 *.zip
 test/*
-nnet_model/*
 deprecated_models/*
+experiments/*
 .ipynb_checkpoints/*
 orchestration/*
 .vscode/*

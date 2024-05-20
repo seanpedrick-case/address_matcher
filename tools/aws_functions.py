@@ -6,11 +6,11 @@ import os
 
 PandasDataFrame = Type[pd.DataFrame]
 
-bucket_name = os.environ['ADDRESS_MATCHER_BUCKET']
-
 try:
+    bucket_name = os.environ['ADDRESS_MATCHER_BUCKET']
     session = boto3.Session(profile_name="default")
 except Exception as e:
+    bucket_name = ''
     print(e)
 
 # sts = session.client("sts")

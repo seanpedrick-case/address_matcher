@@ -11,4 +11,5 @@ test/*
 deprecated_models/*
 .ipynb_checkpoints/*
 orchestration/*
+experiments/*
 .vscode/*

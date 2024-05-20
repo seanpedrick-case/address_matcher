@@ -1,6 +1,5 @@
-#fuzzywuzzy==0.18.0
 numpy==1.26.2
-pandas==2.2.1
+pandas==2.2.2
 rapidfuzz==3.8.1
 torch==2.2.1
 recordlinkage==0.16
@@ -8,6 +7,6 @@ pyap==0.3.1
 pytest==7.4.3
 pyarrow==14.0.1
 openpyxl==3.1.2
-gradio==4.20.1
-boto3==1.34.63
+gradio==4.31.0
+boto3==1.34.103
 polars==0.20.19

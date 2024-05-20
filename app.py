@@ -159,9 +159,9 @@ def create_batch_ranges(df:PandasDataFrame, ref_df:PandasDataFrame, batch_size:i
     return lengths_df
 
 
-def run_matcher(in_text, in_file, in_ref, data_state:PandasDataFrame, results_data_state:PandasDataFrame, ref_data_state:PandasDataFrame, in_colnames:List[str], in_refcol:List[str], in_joincol:List[str], in_existing:List[str], in_api:str, in_api_key:str, InitMatch:MatcherClass = InitMatch, progress=gr.Progress()):  
+def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame, results_data_state:PandasDataFrame, ref_data_state:PandasDataFrame, in_colnames:List[str], in_refcol:List[str], in_joincol:List[str], in_existing:List[str], in_api:str, in_api_key:str, InitMatch:MatcherClass = InitMatch, progress=gr.Progress()):  
     '''
-    Split search and reference data into batches. Loop and run through the match script.
+    Split search and reference data into batches. Loop and run through the match script for each batch of data.
     '''
 
     overall_tic = time.perf_counter()
@@ -318,7 +318,11 @@ def run_matcher(in_text, in_file, in_ref, data_state:PandasDataFrame, results_da
         else:
             summary_of_summaries, BatchMatch_out = run_match_batch(BatchMatch, n, number_of_batches)
         
+        print("BatchMatch_out match shape: ", BatchMatch_out.results_on_orig_df.shape)
+
         OutputMatch = combine_two_matches(OutputMatch, BatchMatch_out, "All up to and including batch " + str(n+1))
+
+        print("Output results match shape: ", OutputMatch.results_on_orig_df.shape)
 
         n += 1
 
@@ -389,8 +393,8 @@ with block:
         
         gr.Markdown(
         """
-        ## Choose reference file
-        Fuzzy matching will work on any address format, but the neural network will only work with the LLPG LPI format, e.g. with columns SaoText, SaoStartNumber etc.. This joins on the UPRN column. If any of these are different for you, 
+        ## Choose reference file / call API
+        Upload a reference file to match against, or alternatively call the Addressbase API (requires API key). Fuzzy matching will work on any address format, but the neural network will only work with the LLPG LPI format, e.g. with columns SaoText, SaoStartNumber etc.. This joins on the UPRN column. If any of these are different for you, 
         open 'Custom reference file format or join columns' below.
         """)
         
