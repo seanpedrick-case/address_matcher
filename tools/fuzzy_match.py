@@ -169,7 +169,11 @@ def string_match_by_post_code_multiple(match_address_series:PandasSeries, refere
 
     return out_frame
 
-def _create_fuzzy_match_results_output(results, search_df_after_stand, ref_df_cleaned, ref_df_after_stand, fuzzy_match_limit, search_df_cleaned, search_df_key_field, new_join_col, standardise, blocker_col):
+def _create_fuzzy_match_results_output(results:PandasDataFrame, search_df_after_stand:PandasDataFrame, ref_df_cleaned:PandasDataFrame, ref_df_after_stand:PandasDataFrame, fuzzy_match_limit:int, search_df_cleaned:PandasDataFrame, search_df_key_field:str, new_join_col:str, standardise:bool, blocker_col:str):
+
+        '''
+        Take fuzzy match outputs, create shortlist dataframes, rearrange, return diagnostics and shortlist dataframes for export
+        '''
 
         ## Diagnostics
 
@@ -227,7 +231,7 @@ def _create_fuzzy_match_results_output(results, search_df_after_stand, ref_df_cl
                 
         return match_results_output, diag_shortlist, diag_best_match
 
-def create_diag_shortlist(results_df, matched_col, fuzzy_match_limit, blocker_col, fuzzy_col="fuzzy_score", search_mod_address = "search_mod_address", resolve_tie_breaks=True, no_number_fuzzy_match_limit=no_number_fuzzy_match_limit):
+def create_diag_shortlist(results_df:PandasDataFrame, matched_col:str, fuzzy_match_limit:int, blocker_col:str, fuzzy_col:str="fuzzy_score", search_mod_address:str = "search_mod_address", resolve_tie_breaks:bool=True, no_number_fuzzy_match_limit:int=no_number_fuzzy_match_limit) -> PandasDataFrame:
     '''
     Create a shortlist of the best matches from a list of suggested matches
     '''
