@@ -103,7 +103,7 @@ with block:
 #block.queue().launch(debug=True) # root_path="/address-match", debug=True, server_name="0.0.0.0",
 
 # Simple run for AWS server
-block.queue().launch(ssl_verify=False, inbrowser=True) # root_path="/address-match", debug=True, server_name="0.0.0.0", server_port=7861
+block.queue().launch(ssl_verify=False) # root_path="/address-match", debug=True, server_name="0.0.0.0", server_port=7861
 
 # Download OpenSSL from here: 
 # Running on local server with https: https://discuss.huggingface.co/t/how-to-run-gradio-with-0-0-0-0-and-https/38003 or https://dev.to/rajshirolkar/fastapi-over-https-for-development-on-windows-2p7d
