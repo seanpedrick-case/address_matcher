@@ -12,6 +12,8 @@ test/*
 deprecated_models/*
 experiments/*
 build_deps/*
+build/*
+dist/*
 .ipynb_checkpoints/*
 orchestration/*
 .vscode/*

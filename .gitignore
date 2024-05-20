@@ -14,4 +14,6 @@ deprecated_models/*
 orchestration/*
 experiments/*
 build_deps/*
+build/*
+dist/*
 .vscode/*

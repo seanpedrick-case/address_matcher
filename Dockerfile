@@ -30,6 +30,7 @@ ENV HOME=/home/user \
 	GRADIO_SERVER_NAME=0.0.0.0 \
 	GRADIO_SERVER_PORT=7861 \
 	GRADIO_THEME=huggingface \
+	AWS_STS_REGIONAL_ENDPOINT=regional \
 	#GRADIO_TEMP_DIR=$HOME/tmp \
 	#GRADIO_ROOT_PATH=/address-match \
 	SYSTEM=spaces
