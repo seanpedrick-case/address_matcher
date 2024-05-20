@@ -7,9 +7,11 @@
 *.pkl
 *.env
 *.zip
+*.pth
 test/*
 deprecated_models/*
 experiments/*
+build_deps/*
 .ipynb_checkpoints/*
 orchestration/*
 .vscode/*

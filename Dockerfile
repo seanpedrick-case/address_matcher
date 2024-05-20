@@ -14,8 +14,8 @@ RUN useradd -m -u 1000 user
 # Change ownership of /home/user directory
 RUN chown -R user:user /home/user
 
-# Create the output files directory and set its permissions
-RUN mkdir -p /home/user/output && chown -R user:user /home/user/output
+# Make output folder
+RUN mkdir -p /home/user/app/output && chown -R user:user /home/user/app/output
 
 # Switch to the "user" user
 USER user
