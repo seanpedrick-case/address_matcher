@@ -70,7 +70,7 @@ def get_file_name(in_name: str) -> str:
     """Get the name of a file from a string, handling both Windows and Unix paths."""
 
     print("in_name: ", in_name)
-    match = re.search(rf'{os.sep}(?!.*{os.sep})(.*)', in_name) 
+    match = re.search(rf'{re.escape(os.sep)}(?!.*{re.escape(os.sep)})(.*)', in_name) 
     if match:
         matched_result = match.group(1)
     else:
