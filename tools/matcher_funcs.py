@@ -169,7 +169,7 @@ def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, prog
             if (i + 1) % 500 == 0:
                 print("Saving api call checkpoint for query:", str(i + 1))
                 
-                pd.concat(loop_list).to_parquet(api_ref_save_loc + ".parquet", index=False)
+                pd.concat(loop_list).to_parquet(output_folder + api_ref_save_loc + ".parquet", index=False)
 
             return loop_list
         
@@ -351,8 +351,8 @@ def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, prog
 
         if save_file:
             print("Saving reference file to: " + api_ref_save_loc[:-5] + ".parquet")
-            Matcher.ref_df.to_parquet(api_ref_save_loc + ".parquet", index=False) # Save checkpoint as well
-            Matcher.ref_df.to_parquet(api_ref_save_loc[:-5] + ".parquet", index=False)
+            Matcher.ref_df.to_parquet(output_folder + api_ref_save_loc + ".parquet", index=False) # Save checkpoint as well
+            Matcher.ref_df.to_parquet(output_folder + api_ref_save_loc[:-5] + ".parquet", index=False)
 
         if Matcher.ref_df.empty:
             print ("No reference data found with API")
@@ -676,8 +676,8 @@ def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, 
         print("Shape of ref_df after filtering is: ", Matcher.ref_df.shape)
         print("Shape of search_df after filtering is: ", Matcher.search_df.shape)
     
-        Matcher.match_outputs_name = "output/diagnostics_initial_" + today_rev + ".csv" 
-        Matcher.results_orig_df_name = "output/results_initial_" + today_rev + ".csv" 
+        Matcher.match_outputs_name = output_folder + "diagnostics_initial_" + today_rev + ".csv" 
+        Matcher.results_orig_df_name = output_folder + "results_initial_" + today_rev + ".csv" 
     
         Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
         Matcher.results_on_orig_df.to_csv(Matcher.results_orig_df_name, index = None)
@@ -723,10 +723,6 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
     # Initial preparation of reference addresses
     InitMatch.ref_df_cleaned = prepare_ref_address(InitMatch.ref_df, InitMatch.ref_address_cols, InitMatch.new_join_col)
     
-
-    # Sort dataframes by postcode - will allow for more efficient matching process if using multiple batches
-    #InitMatch.search_df_cleaned = InitMatch.search_df_cleaned.sort_values(by="postcode")
-    #InitMatch.ref_df_cleaned = InitMatch.ref_df_cleaned.sort_values(by="Postcode")
 
     # Polars implementation - not finalised
     #InitMatch.search_df_cleaned = InitMatch.search_df_cleaned.to_pandas()
@@ -777,31 +773,10 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
 
         search_range = range_df.iloc[row]['search_range']
         ref_range = range_df.iloc[row]['ref_range']
-
-        #print("search_range: ", search_range)
-        #pd.DataFrame(search_range).to_csv("search_range.csv")
-        #print("ref_range: ", ref_range)
         
         BatchMatch = copy.copy(InitMatch)
 
         # Subset the search and reference dfs based on current batch ranges
-        # BatchMatch.search_df = BatchMatch.search_df.iloc[search_range[0]:search_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.search_df_not_matched = BatchMatch.search_df.copy()
-        # BatchMatch.search_df_cleaned = BatchMatch.search_df_cleaned.iloc[search_range[0]:search_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.ref_df = BatchMatch.ref_df.iloc[ref_range[0]:ref_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.ref_df_cleaned = BatchMatch.ref_df_cleaned.iloc[ref_range[0]:ref_range[1] + 1,:].reset_index(drop=True)
-
-
-        # BatchMatch.search_df_after_stand_series = BatchMatch.search_df_after_stand_series.iloc[search_range[0]:search_range[1] + 1]
-        # BatchMatch.ref_df_after_stand_series = BatchMatch.ref_df_after_stand_series.iloc[ref_range[0]:ref_range[1] + 1]
-        # BatchMatch.search_df_after_stand_series_full_stand = BatchMatch.search_df_after_stand_series_full_stand.iloc[search_range[0]:search_range[1] + 1]
-        # BatchMatch.ref_df_after_stand_series_full_stand = BatchMatch.ref_df_after_stand_series_full_stand.iloc[ref_range[0]:ref_range[1] + 1]
-
-        # BatchMatch.search_df_after_stand = BatchMatch.search_df_after_stand.iloc[search_range[0]:search_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.ref_df_after_stand = BatchMatch.ref_df_after_stand.iloc[ref_range[0]:ref_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.search_df_after_full_stand = BatchMatch.search_df_after_full_stand.iloc[search_range[0]:search_range[1] + 1,:].reset_index(drop=True)
-        # BatchMatch.ref_df_after_full_stand = BatchMatch.ref_df_after_full_stand.iloc[ref_range[0]:ref_range[1] + 1,:].reset_index(drop=True)
-
         BatchMatch.search_df = BatchMatch.search_df[BatchMatch.search_df.index.isin(search_range)].reset_index(drop=True)
         BatchMatch.search_df_not_matched = BatchMatch.search_df.copy()
         BatchMatch.search_df_cleaned = BatchMatch.search_df_cleaned[BatchMatch.search_df_cleaned.index.isin(search_range)].reset_index(drop=True)
@@ -814,24 +789,8 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
         BatchMatch.search_df_after_full_stand = BatchMatch.search_df_after_full_stand[BatchMatch.search_df_after_full_stand.index.isin(search_range)].reset_index(drop=True)
 
         ### Create lookup lists for fuzzy matches
-        # BatchMatch.search_df_after_stand_series = BatchMatch.search_df_after_stand.copy().set_index('postcode_search')['search_address_stand']
-        # BatchMatch.search_df_after_stand_series_full_stand = BatchMatch.search_df_after_full_stand.copy().set_index('postcode_search')['search_address_stand']
-        # BatchMatch.search_df_after_stand_series = BatchMatch.search_df_after_stand_series.sort_index()
-        # BatchMatch.search_df_after_stand_series_full_stand = BatchMatch.search_df_after_stand_series_full_stand.sort_index()
-
-        #BatchMatch.search_df_after_stand.reset_index(inplace=True, drop = True)
-        #BatchMatch.search_df_after_full_stand.reset_index(inplace=True, drop = True)
-
         BatchMatch.ref_df_after_stand = BatchMatch.ref_df_after_stand[BatchMatch.ref_df_after_stand.index.isin(ref_range)].reset_index(drop=True)
         BatchMatch.ref_df_after_full_stand = BatchMatch.ref_df_after_full_stand[BatchMatch.ref_df_after_full_stand.index.isin(ref_range)].reset_index(drop=True)
-
-        # BatchMatch.ref_df_after_stand_series = BatchMatch.ref_df_after_stand.copy().set_index('postcode_search')['ref_address_stand']
-        # BatchMatch.ref_df_after_stand_series_full_stand = BatchMatch.ref_df_after_full_stand.copy().set_index('postcode_search')['ref_address_stand']
-        # BatchMatch.ref_df_after_stand_series = BatchMatch.ref_df_after_stand_series.sort_index()
-        # BatchMatch.ref_df_after_stand_series_full_stand = BatchMatch.ref_df_after_stand_series_full_stand.sort_index()
-
-        # BatchMatch.ref_df_after_stand.reset_index(inplace=True, drop=True)
-        # BatchMatch.ref_df_after_full_stand.reset_index(inplace=True, drop=True)
 
         # Match the data, unless the search or reference dataframes are empty
         if BatchMatch.search_df.empty or BatchMatch.ref_df.empty:
@@ -937,8 +896,6 @@ def create_batch_ranges(df:PandasDataFrame, ref_df:PandasDataFrame, batch_size:i
 
     df = df.sort_index()
     ref_df = ref_df.sort_index()
-
-    #df.to_csv("batch_search_df.csv")
 
     # Overall batch variables
     batch_indexes = []
@@ -1184,8 +1141,8 @@ def orchestrate_match_run(Matcher, standardise = False, nnet = False, file_stub=
   
         Matcher.output_summary = create_match_summary(Matcher.match_results_output, df_name = df_name)       
         
-        Matcher.match_outputs_name = "output/diagnostics_" + file_stub + today_rev + ".csv"
-        Matcher.results_orig_df_name = "output/results_" + file_stub + today_rev + ".csv"
+        Matcher.match_outputs_name = output_folder + "diagnostics_" + file_stub + today_rev + ".csv"
+        Matcher.results_orig_df_name = output_folder + "results_" + file_stub + today_rev + ".csv"
     
         Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
         Matcher.results_on_orig_df.to_csv(Matcher.results_orig_df_name, index = None)
@@ -1233,13 +1190,8 @@ def full_fuzzy_match(search_df:PandasDataFrame,
     # Remove rows from ref search series where postcode is not found in the search_df
     search_df_after_stand_series = search_df_after_stand.copy().set_index('postcode_search')['search_address_stand'].sort_index()
     ref_df_after_stand_series = ref_df_after_stand.copy().set_index('postcode_search')['ref_address_stand'].sort_index()
-
-    #print(search_df_after_stand_series.index.tolist())
-    #print(ref_df_after_stand_series.index.tolist())
-    
+   
     ref_df_after_stand_series_checked = ref_df_after_stand_series.copy()[ref_df_after_stand_series.index.isin(search_df_after_stand_series.index.tolist())]
-
-    # pd.DataFrame(ref_df_after_stand_series_checked.to_csv("ref_df_after_stand_series_checked.csv"))
 
     if len(ref_df_after_stand_series_checked) == 0: 
         print("Nothing relevant in reference data to match!")
@@ -1603,8 +1555,8 @@ def combine_two_matches(OrigMatchClass:MatcherClass, NewMatchClass:MatcherClass,
         ### Rejoin the excluded matches onto the output file
         #NewMatchClass.results_on_orig_df = pd.concat([NewMatchClass.results_on_orig_df, NewMatchClass.excluded_df])
     
-        NewMatchClass.match_outputs_name = "output/diagnostics_" + today_rev + ".csv" # + NewMatchClass.file_name + "_" 
-        NewMatchClass.results_orig_df_name = "output/results_" + today_rev + ".csv" # + NewMatchClass.file_name + "_"
+        NewMatchClass.match_outputs_name = output_folder + "diagnostics_" + today_rev + ".csv" # + NewMatchClass.file_name + "_" 
+        NewMatchClass.results_orig_df_name = output_folder + "results_" + today_rev + ".csv" # + NewMatchClass.file_name + "_"
 
         # Only keep essential columns
         essential_results_cols = [NewMatchClass.search_df_key_field, "Excluded from search", "Matched with reference address", "ref_index", "Reference matched address", "Reference file"]

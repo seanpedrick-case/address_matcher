@@ -13,16 +13,6 @@ except Exception as e:
     bucket_name = ''
     print(e)
 
-# sts = session.client("sts")
-# Create a Session with the IAM role ARN
-# aws_role = os.environ['AWS_ROLE_DATA_TEXT_SEARCH']
-# response = sts.assume_role(
-#     RoleArn=aws_role,
-#     RoleSessionName="ecs-test-session"
-# )
-# print(response)
-
-
 def get_assumed_role_info():
     sts = boto3.client('sts', region_name='eu-west-2', endpoint_url='https://sts.eu-west-2.amazonaws.com')
     response = sts.get_caller_identity()

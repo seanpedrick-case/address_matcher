@@ -60,9 +60,9 @@ def ensure_output_folder_exists(output_folder):
     if not os.path.exists(folder_name):
         # Create the folder if it doesn't exist
         os.makedirs(folder_name)
-        print(f"Created the output folder.")
+        print(f"Created the output folder:", folder_name)
     else:
-        print(f"The output folder already exists.")
+        print(f"The output folder already exists:", folder_name)
 
 def dummy_function(in_colnames):
     """
@@ -72,4 +72,5 @@ def dummy_function(in_colnames):
 
 
 def clear_inputs(in_file, in_ref, in_text):
-    return gr.File.update(value=[]), gr.File.update(value=[]), gr.Textbox.update(value='')
+    return gr.File(value=[]), gr.File(value=[]), gr.Textbox(value='')
+

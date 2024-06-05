@@ -15,10 +15,6 @@ today_rev = datetime.now().strftime("%Y%m%d")
 
 # # Neural net functions
 
-
-
-
-
 def vocab_lookup(characters: str, vocab) -> (int, np.ndarray):
     """
     Taken from the function from the addressnet package by Jason Rigby
@@ -298,21 +294,10 @@ def post_predict_clean(predict_df, orig_search_df, ref_address_cols, search_df_k
 
     predict_df = predict_df.rename(columns={"Postcode":"Postcode_predict"})
 
-    #orig_search_df.to_csv("orig_search_df_pre_predict.csv")
-
     orig_search_df_pc = orig_search_df[[search_df_key_field, "postcode"]].rename(columns={"postcode":"Postcode"}).reset_index(drop=True)
     predict_df = predict_df.merge(orig_search_df_pc, left_index=True, right_index=True, how = "left")
 
-    #predict_df = pd.concat([predict_df, orig_search_df_pc], axis = 1)
-    
-    #predict_df[search_df_key_field] = orig_search_df[search_df_key_field]
-
-    #predict_df = predict_df.drop("index", axis=1)
-
-    #predict_df['index'] = predict_df.index
     predict_df[search_df_key_field] = predict_df[search_df_key_field].astype(str)
-
-    #predict_df.to_csv("predict_end_of_clean.csv")
     
     return predict_df
 

@@ -16,6 +16,8 @@ NOTE: for ensuring that spaCy models are loaded into the program correctly in re
 
 a) In command line: pyi-makespec --additional-hooks-dir="build_deps\\" --collect-data=gradio_client --collect-data=gradio --hidden-import pyarrow.vendored.version --onefile --name AddressMatcher_0.1 app.py
 
+pyi-makespec --additional-hooks-dir="build_deps\\" --collect-data=gradio_client --collect-data=gradio --hidden-import pyarrow.vendored.version --name AddressMatcher_0.1_f app.py
+
 b) Open the created spec file in Notepad. Add the following to the end of the Analysis section then save:
 
 a = Analysis(
@@ -26,6 +28,8 @@ a = Analysis(
 )
 
 c) Back in command line, run this: pyinstaller --clean --noconfirm AddressMatcher_0.1.spec
+
+pyinstaller --clean --noconfirm AddressMatcher_0.1_f.spec
 
 
 9. A 'dist' folder will be created with the executable inside along with all dependencies('dist\data_text_search'). 

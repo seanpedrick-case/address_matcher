@@ -7,6 +7,7 @@ import pandas as pd
 from tools.matcher_funcs import run_matcher
 from tools.gradio import initial_data_load, ensure_output_folder_exists
 from tools.aws_functions import load_data_from_aws
+from tools.constants import output_folder
 
 import warnings
 # Remove warnings from print statements
@@ -20,7 +21,9 @@ today_rev = datetime.now().strftime("%Y%m%d")
 
 # Base folder is where the code file is stored
 base_folder = Path(os.getcwd())
-output_folder = "output/"
+# output_folder = "output/" # This is now defined in constants
+
+
 
 ensure_output_folder_exists(output_folder)
 

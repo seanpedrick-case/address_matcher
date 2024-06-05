@@ -156,9 +156,6 @@ def places_api_query(query, api_key, query_type):
         print("No API key provided.")
         return pd.DataFrame() # Return blank dataframe
     
-    #print('RESPONSE:', concat_results)
-    
-    
     # Convert 'results' to DataFrame
 
     # Check if 'LPI' sub-branch exists in the JSON response
@@ -177,18 +174,7 @@ def places_api_query(query, api_key, query_type):
     if isinstance(df, pd.Series):
         print("This is a series!")
         df = df.to_frame().T  # Convert the Series to a DataFrame with a single row
-    # if isinstance(df, pd.DataFrame):
-    #     print("This is a dataframe!")
-    # else:
-    #     print("This is not a dataframe!")
-    #     return pd.DataFrame() # Return blank dataframe
 
-
-    print(df)
-    #print(df.columns)
-    #df.to_csv(query + ".csv")
-
-    
 
     overall_toc = time.perf_counter()
     time_out = f"The API call took {overall_toc - overall_tic:0.1f} seconds"

@@ -11,6 +11,24 @@ from .pytorch_models import *
 PandasDataFrame = Type[pd.DataFrame]
 PandasSeries = Type[pd.Series]
 
+def get_or_create_env_var(var_name, default_value):
+    # Get the environment variable if it exists
+    value = os.environ.get(var_name)
+    
+    # If it doesn't exist, set it to the default value
+    if value is None:
+        os.environ[var_name] = default_value
+        value = default_value
+    
+    return value
+
+# Retrieving or setting output folder
+env_var_name = 'GRADIO_OUTPUT_FOLDER'
+default_value = 'output/'
+
+output_folder = get_or_create_env_var(env_var_name, default_value)
+print(f'The value of {env_var_name} is {output_folder}')
+
 # +
 ''' Fuzzywuzzy/Rapidfuzz scorer to use. Options are: ratio, partial_ratio, token_sort_ratio, partial_token_sort_ratio,
 token_set_ratio, partial_token_set_ratio, QRatio, UQRatio, WRatio (default), UWRatio
@@ -18,17 +36,11 @@ details here: https://stackoverflow.com/questions/31806695/when-to-use-which-fuz
 
 fuzzy_scorer_used = "token_set_ratio"
 
-# +
 fuzzy_match_limit = 85
-
 fuzzy_search_addr_limit = 20
-
 filter_to_lambeth_pcodes= True 
-# -
-
 standardise = False
 
-# +
 if standardise == True:
     std = "_std"
 if standardise == False:
@@ -40,8 +52,7 @@ suffix_used = dataset_name + "_" + fuzzy_scorer_used
 
 # https://stackoverflow.com/questions/59221557/tensorflow-v2-replacement-for-tf-contrib-predictor-from-saved-model
 
-ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
-print(ROOT_DIR)
+
 
 # Uncomment these lines for the tensorflow model
 #model_type = "tf"
@@ -66,30 +77,32 @@ device = "cpu"
 global labels_list
 labels_list = []
 
+ROOT_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+
+# If in a non-standard location (e.g. on AWS Lambda Function URL, then save model to tmp drive)
+if output_folder == "output/":
+    out_model_dir = ROOT_DIR
+    print(out_model_dir)
+else:
+    out_model_dir = output_folder[:-1]
+    print(out_model_dir)
+
 model_dir_name = os.path.join(ROOT_DIR, "nnet_model" , model_stub , model_version)
-print(model_dir_name)
 
 model_path = os.path.join(model_dir_name, "saved_model.zip")
-print("model path: ")
-print(model_path)
+print("Model zip path: ", model_path)
 
 if os.path.exists(model_path):
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1' # Better to go without GPU to avoid 'out of memory' issues
     device = "cpu"
-        
-
-
+   
     ## The labels_list object defines the structure of the prediction outputs. It must be the same as what the model was originally trained on
-    
-
-    
+ 
     ''' Load pre-trained model '''
     
-
-
     with zipfile.ZipFile(model_path,"r") as zip_ref:
-        zip_ref.extractall(model_dir_name)
+        zip_ref.extractall(out_model_dir)
         
     # if model_stub == "addr_model_out_lon":
 
@@ -143,16 +156,15 @@ if os.path.exists(model_path):
         'Postcode',  # 14
         'IGNORE'
         ]
-        
-    #labels_list.to_csv("labels_list.csv", index = None)    
+          
             
         if (model_type == "transformer") | (model_type == "gru") | (model_type == "lstm") :   
             # Load vocab and word_to_index
-            with open(model_dir_name + "vocab.txt", "r") as f:
+            with open(out_model_dir + "/vocab.txt", "r") as f:
                 vocab = eval(f.read())
-            with open(model_dir_name + "/word_to_index.txt", "r") as f:
+            with open(out_model_dir + "/word_to_index.txt", "r") as f:
                 word_to_index = eval(f.read())
-            with open(model_dir_name + "/cat_to_idx.txt", "r") as f:
+            with open(out_model_dir + "/cat_to_idx.txt", "r") as f:
                 cat_to_idx = eval(f.read())
 
             VOCAB_SIZE = len(word_to_index)
@@ -180,8 +192,12 @@ if os.path.exists(model_path):
                 exported_model = LSTMTextClassifier(VOCAB_SIZE, EMBEDDING_DIM, HIDDEN_DIM, OUTPUT_DIM, N_LAYERS, DROPOUT, PAD_TOKEN)
         
         
-            exported_model.load_state_dict(torch.load(model_dir_name + "output_model_" + str(data_sample_size) +\
-               "_" + str(N_EPOCHS) + "_" + model_type + ".pth", map_location=torch.device('cpu')))
+            out_model_file_name = "output_model_" + str(data_sample_size) +\
+               "_" + str(N_EPOCHS) + "_" + model_type + ".pth"
+
+            out_model_path = os.path.join(out_model_dir, out_model_file_name)
+            print("Model location: ", out_model_path)
+            exported_model.load_state_dict(torch.load(out_model_path, map_location=torch.device('cpu')))
             exported_model.eval()
 
             device='cpu'
@@ -196,13 +212,7 @@ if os.path.exists(model_path):
 
 else: exported_model = []
 
-#if exported_model:
-#        exported_model = exported_model
-#else: exported_model = []
-
-
-
-# +
+### ADDRESS MATCHING FUNCTIONS
 # Address matcher will try to match <batch_size> records in one go to avoid exceeding memory limits.
 batch_size = 10000
 ref_batch_size = 150000
@@ -214,7 +224,6 @@ ref_batch_size = 150000
  Options are [‘jaro’, ‘jarowinkler’, ‘levenshtein’, ‘damerau_levenshtein’, ‘qgram’, ‘cosine’, ‘smith_waterman’, ‘lcs’]
 
  Comparison of some of the Jellyfish string comparison methods: https://manpages.debian.org/testing/python-jellyfish-doc/jellyfish.3.en.html '''
-
 
 fuzzy_method = "jarowinkler"
 
