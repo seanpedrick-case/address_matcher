@@ -1,5 +1,9 @@
 FROM public.ecr.aws/docker/library/python:3.11.9-slim-bookworm
 
+# Install Lambda web adapter in case you want to run with with an AWS Lamba function URL
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.3 /lambda-adapter /opt/extensions/lambda-adapter
+
+
 WORKDIR /src
 
 COPY requirements.txt .
