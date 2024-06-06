@@ -23,8 +23,6 @@ today_rev = datetime.now().strftime("%Y%m%d")
 base_folder = Path(os.getcwd())
 # output_folder = "output/" # This is now defined in constants
 
-
-
 ensure_output_folder_exists(output_folder)
 
 # Create the gradio interface
@@ -102,11 +100,17 @@ with block:
     match_btn.click(fn = run_matcher, inputs=[in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, in_api, in_api_key],
                     outputs=[output_summary, output_file], api_name="address")
     
-# Simple run for HF spaces or local on your computer
-#block.queue().launch(debug=True) # root_path="/address-match", debug=True, server_name="0.0.0.0",
 
-# Simple run for AWS server
-block.queue().launch(ssl_verify=False) # root_path="/address-match", debug=True, server_name="0.0.0.0", server_port=7861
+# Run app
+# If GRADIO_OUTPUT_FOLDER exists and is set to /tmp/ it means that the app is running on AWS Lambda and the queue should not be enabled.
+
+if 'GRADIO_OUTPUT_FOLDER' in os.environ:
+    if os.environ['GRADIO_OUTPUT_FOLDER'] == '/tmp/':
+        block.launch(ssl_verify=False)
+    else:
+        block.queue().launch(ssl_verify=False)
+
+block.queue().launch(ssl_verify=False)
 
 # Download OpenSSL from here: 
 # Running on local server with https: https://discuss.huggingface.co/t/how-to-run-gradio-with-0-0-0-0-and-https/38003 or https://dev.to/rajshirolkar/fastapi-over-https-for-development-on-windows-2p7d
