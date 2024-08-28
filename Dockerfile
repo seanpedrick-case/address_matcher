@@ -8,7 +8,7 @@ RUN apt-get update && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 
-COPY requirements.txt .
+COPY requirements_aws.txt .
 
 RUN pip install --no-cache-dir torch==2.4.0+cpu --index-url https://download.pytorch.org/whl/cpu && \
 	pip install --no-cache-dir -r requirements_aws.txt && \
