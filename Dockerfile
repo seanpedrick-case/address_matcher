@@ -22,7 +22,9 @@ RUN chown -R user:user /home/user
 
 # Make output folder
 RUN mkdir -p /home/user/app/output && chown -R user:user /home/user/app/output && \
-	mkdir -p /home/user/app/output/api && chown -R user:user /home/user/app/output/api
+	mkdir -p /home/user/app/output/api && chown -R user:user /home/user/app/output/api && \
+	mkdir -p /home/user/app/api && chown -R user:user /home/user/app/api && \
+	chown -R user:user /home/user/app
 
 # Switch to the "user" user
 USER user
