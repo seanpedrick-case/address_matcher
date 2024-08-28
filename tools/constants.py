@@ -197,7 +197,7 @@ if os.path.exists(model_path):
 
             out_model_path = os.path.join(out_model_dir, out_model_file_name)
             print("Model location: ", out_model_path)
-            exported_model.load_state_dict(torch.load(out_model_path, map_location=torch.device('cpu')))
+            exported_model.load_state_dict(torch.load(out_model_path, map_location=torch.device('cpu'), weights_only=False))
             exported_model.eval()
 
             device='cpu'
