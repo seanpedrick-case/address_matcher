@@ -3,11 +3,13 @@ from datetime import datetime
 from pathlib import Path
 import gradio as gr
 import pandas as pd
+import socket
 
 from tools.matcher_funcs import run_matcher
-from tools.gradio import initial_data_load, ensure_output_folder_exists
-from tools.aws_functions import load_data_from_aws
+from tools.helper_functions import initial_data_load, ensure_output_folder_exists, get_connection_params, get_or_create_env_var, reveal_feedback_buttons
+from tools.aws_functions import load_data_from_aws, upload_file_to_s3
 from tools.constants import output_folder
+from tools.auth import authenticate_user
 
 import warnings
 # Remove warnings from print statements
@@ -25,6 +27,15 @@ base_folder = Path(os.getcwd())
 
 ensure_output_folder_exists(output_folder)
 
+host_name = socket.gethostname()
+
+feedback_logs_folder = 'feedback/' + today_rev + '/' + host_name + '/'
+access_logs_folder = 'logs/' + today_rev + '/' + host_name + '/'
+usage_logs_folder = 'usage/' + today_rev + '/' + host_name + '/'
+
+# Launch the Gradio app
+ADDRESSBASE_API_KEY = get_or_create_env_var('ADDRESSBASE_API_KEY', '')
+
 # Create the gradio interface
 block = gr.Blocks(theme = gr.themes.Base())
 
@@ -34,6 +45,17 @@ with block:
     ref_data_state = gr.State(pd.DataFrame())
     results_data_state = gr.State(pd.DataFrame())
     ref_results_data_state =gr.State(pd.DataFrame())
+
+    session_hash_state = gr.State()
+    s3_output_folder_state = gr.State()
+
+    # Logging state
+    feedback_logs_state = gr.State(feedback_logs_folder + 'log.csv')
+    feedback_s3_logs_loc_state = gr.State(feedback_logs_folder)
+    access_logs_state = gr.State(access_logs_folder + 'log.csv')
+    access_s3_logs_loc_state = gr.State(access_logs_folder)
+    usage_logs_state = gr.State(usage_logs_folder + 'log.csv')
+    usage_s3_logs_loc_state = gr.State(usage_logs_folder)    
 
     gr.Markdown(
     """
@@ -66,7 +88,7 @@ with block:
 
         with gr.Accordion("Use Addressbase API (instead of reference file)", open = True):
             in_api = gr.Dropdown(label="Choose API type", multiselect=False, value=None, choices=["Postcode"])#["Postcode", "UPRN"]) #choices=["Address", "Postcode", "UPRN"])
-            in_api_key = gr.Textbox(label="Addressbase API key", type='password')
+            in_api_key = gr.Textbox(label="Addressbase API key", type='password', value = ADDRESSBASE_API_KEY)
 
         with gr.Accordion("Match against reference file of addresses", open = False):
             in_ref = gr.File(label="Input reference addresses from file", file_count= "multiple")
@@ -81,6 +103,18 @@ with block:
             output_summary = gr.Textbox(label="Output summary")
             output_file = gr.File(label="Output file")
 
+        feedback_title = gr.Markdown(value="## Please give feedback", visible=False)
+        feedback_radio = gr.Radio(choices=["The results were good", "The results were not good"], visible=False)
+        further_details_text = gr.Textbox(label="Please give more detailed feedback about the results:", visible=False)
+        submit_feedback_btn = gr.Button(value="Submit feedback", visible=False)
+
+        with gr.Row():
+            s3_logs_output_textbox = gr.Textbox(label="Feedback submission logs", visible=False)
+            # This keeps track of the time taken to match files for logging purposes.
+            estimated_time_taken_number = gr.Number(value=0.0, precision=1, visible=False)
+            # Invisible text box to hold the session hash/username just for logging purposes
+            session_hash_textbox = gr.Textbox(value="", visible=False)
+
     with gr.Tab(label="Advanced options"):
         with gr.Accordion(label = "AWS data access", open = False):
                 aws_password_box = gr.Textbox(label="Password for AWS data access (ask the Data team if you don't have this)")
@@ -90,35 +124,46 @@ with block:
                     
                 aws_log_box = gr.Textbox(label="AWS data load status")
 
-    
     ### Loading AWS data ###
     load_aws_data_button.click(fn=load_data_from_aws, inputs=[in_aws_file, aws_password_box], outputs=[in_ref, aws_log_box])
-    
 
     # Updates to components
     in_file.change(fn = initial_data_load, inputs=[in_file], outputs=[output_summary, in_colnames, in_existing, data_state, results_data_state])
     in_ref.change(fn = initial_data_load, inputs=[in_ref], outputs=[output_summary, in_refcol, in_joincol, ref_data_state, ref_results_data_state])      
 
     match_btn.click(fn = run_matcher, inputs=[in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, in_api, in_api_key],
-                    outputs=[output_summary, output_file], api_name="address")
+                    outputs=[output_summary, output_file, estimated_time_taken_number], api_name="address").\
+    then(fn = reveal_feedback_buttons, outputs=[feedback_radio, further_details_text, submit_feedback_btn, feedback_title])
     
 
-# Run app
-# If GRADIO_OUTPUT_FOLDER exists and is set to /tmp/ it means that the app is running on AWS Lambda and the queue should not be enabled.
+    # Get connection details on app load
+    block.load(get_connection_params, inputs=None, outputs=[session_hash_state, s3_output_folder_state, session_hash_textbox])
 
-if 'GRADIO_OUTPUT_FOLDER' in os.environ:
-    if os.environ['GRADIO_OUTPUT_FOLDER'] == '/tmp/':
-        block.launch(ssl_verify=False)
+    # Log usernames and times of access to file (to know who is using the app when running on AWS)
+    access_callback = gr.CSVLogger()
+    access_callback.setup([session_hash_textbox], access_logs_folder)
+    session_hash_textbox.change(lambda *args: access_callback.flag(list(args)), [session_hash_textbox], None, preprocess=False).\
+    then(fn = upload_file_to_s3, inputs=[access_logs_state, access_s3_logs_loc_state], outputs=[s3_logs_output_textbox])
+
+    # User submitted feedback for pdf redactions
+    feedback_callback = gr.CSVLogger()
+    feedback_callback.setup([feedback_radio, further_details_text, in_file], feedback_logs_folder)
+    submit_feedback_btn.click(lambda *args: feedback_callback.flag(list(args)), [feedback_radio, further_details_text, in_file], None, preprocess=False).\
+    then(fn = upload_file_to_s3, inputs=[feedback_logs_state, feedback_s3_logs_loc_state], outputs=[further_details_text])
+
+    # Log processing time/token usage when making a query
+    usage_callback = gr.CSVLogger()
+    usage_callback.setup([session_hash_textbox, in_file, estimated_time_taken_number], usage_logs_folder)
+    estimated_time_taken_number.change(lambda *args: usage_callback.flag(list(args)), [session_hash_textbox, in_file, estimated_time_taken_number], None, preprocess=False).\
+    then(fn = upload_file_to_s3, inputs=[usage_logs_state, usage_s3_logs_loc_state], outputs=[s3_logs_output_textbox])
+
+# Launch the Gradio app
+COGNITO_AUTH = get_or_create_env_var('COGNITO_AUTH', '0')
+print(f'The value of COGNITO_AUTH is {COGNITO_AUTH}')
+
+if __name__ == "__main__":
+    if os.environ['COGNITO_AUTH'] == "1":
+        block.queue().launch(show_error=True, auth=authenticate_user, max_file_size='50mb')
     else:
-        block.queue().launch(ssl_verify=False)
-
-block.queue().launch(ssl_verify=False)
-
-# Download OpenSSL from here: 
-# Running on local server with https: https://discuss.huggingface.co/t/how-to-run-gradio-with-0-0-0-0-and-https/38003 or https://dev.to/rajshirolkar/fastapi-over-https-for-development-on-windows-2p7d
-#block.queue().launch(ssl_verify=False, share=False, debug=False, server_name="0.0.0.0",server_port=443,
-#                     ssl_certfile="cert.pem", ssl_keyfile="key.pem") # port 443 for https. Certificates currently not valid
-
-# Running on local server without https
-#block.queue().launch(server_name="0.0.0.0", server_port=7861, ssl_verify=False)
+        block.queue().launch(show_error=True, inbrowser=True, max_file_size='50mb')
 

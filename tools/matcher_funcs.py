@@ -33,7 +33,7 @@ from tools.standardise import standardise_wrapper_func
 ### Predict function for imported model
 from tools.model_predict import full_predict_func, full_predict_torch, post_predict_clean
 from tools.recordlinkage_funcs import score_based_match
-from tools.gradio import initial_data_load
+from tools.helper_functions import initial_data_load, sum_numbers_before_seconds
 
 # API functions
 from tools.addressbase_api_funcs import places_api_query
@@ -108,10 +108,13 @@ def filter_not_matched(
     
     return search_df.iloc[np.where(~matched)[0]]
 
-def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, progress=gr.Progress()):
+def query_addressbase_api(in_api_key:str, Matcher:MatcherClass, query_type:str, progress=gr.Progress()):
+    
+    final_api_output_file_name = ""
+
     if in_api_key == "":
         print ("No API key provided, please provide one to continue")
-        return Matcher
+        return Matcher, final_api_output_file_name
     else:
         # Call the API
         #Matcher.ref_df = pd.DataFrame()
@@ -119,7 +122,7 @@ def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, prog
         # Check if the ref_df file already exists
         def check_and_create_api_folder():
             # Check if the environmental variable is available
-            file_path = os.environ.get('ADDRESSBASE_API_OUT')  # Replace 'YOUR_ENV_VARIABLE_NAME' with the name of your environmental variable
+            file_path = os.environ.get('ADDRESSBASE_API_OUT') 
 
             if file_path is None:
                 # Environmental variable is not set
@@ -145,11 +148,13 @@ def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, prog
         api_ref_save_loc = api_output_folder + search_file_name_without_extension + "_api_" + today_month_rev + "_" + query_type + "_ckpt"
         print("API reference save location: ", api_ref_save_loc)
 
+        final_api_output_file_name = api_ref_save_loc + ".parquet"
+
         # Allow for csv, parquet and gzipped csv files
         if os.path.isfile(api_ref_save_loc + ".csv"):
             print("API reference CSV file found")
             Matcher.ref_df = pd.read_csv(api_ref_save_loc + ".csv")
-        elif os.path.isfile(api_ref_save_loc + ".parquet"):
+        elif os.path.isfile(final_api_output_file_name):
             print("API reference Parquet file found")
             Matcher.ref_df = pd.read_parquet(api_ref_save_loc + ".parquet")
         elif os.path.isfile(api_ref_save_loc + ".csv.gz"):
@@ -350,21 +355,23 @@ def run_all_api_calls(in_api_key:str, Matcher:MatcherClass, query_type:str, prog
                 # Matcher.ref_df = Matcher.ref_df.loc[Matcher.ref_df["LOCAL_CUSTODIAN_CODE"] != 7655,:] 
 
         if save_file:
+            final_api_output_file_name = output_folder + api_ref_save_loc[:-5] + ".parquet"
             print("Saving reference file to: " + api_ref_save_loc[:-5] + ".parquet")
             Matcher.ref_df.to_parquet(output_folder + api_ref_save_loc + ".parquet", index=False) # Save checkpoint as well
-            Matcher.ref_df.to_parquet(output_folder + api_ref_save_loc[:-5] + ".parquet", index=False)
+            Matcher.ref_df.to_parquet(final_api_output_file_name, index=False)
 
         if Matcher.ref_df.empty:
             print ("No reference data found with API")
             return Matcher
                         
-    return Matcher
+    return Matcher, final_api_output_file_name
 
-def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, in_ref:List[str], in_refcol:List[str], in_api:List[str], in_api_key:str, query_type:str, progress=gr.Progress()):
+def load_ref_data(Matcher:MatcherClass, ref_data_state:PandasDataFrame, in_ref:List[str], in_refcol:List[str], in_api:List[str], in_api_key:str, query_type:str, progress=gr.Progress()):
         '''
         Check for reference address data, do some preprocessing, and load in from the Addressbase API if required.
         '''
-        
+        final_api_output_file_name = ""
+
         # Check if reference data loaded, bring in if already there
         if not ref_data_state.empty:
             Matcher.ref_df = ref_data_state
@@ -382,10 +389,10 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
             if not in_ref:
                 if in_api==False:
                     print ("No reference file provided, please provide one to continue")
-                    return Matcher
+                    return Matcher, final_api_output_file_name
                 # Check if api call required and api key is provided
                 else:
-                    Matcher = run_all_api_calls(in_api_key, Matcher, query_type)
+                    Matcher, final_api_output_file_name = query_addressbase_api(in_api_key, Matcher, query_type)
 
             else:
                 Matcher.ref_name = get_file_name(in_ref[0].name)
@@ -402,9 +409,7 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
                     
                     Matcher.ref_df = pd.concat([Matcher.ref_df, temp_ref_file])              
 
-        # For the neural net model to work, the llpg columns have to be in the LPI format (e.g. with columns SaoText, SaoStartNumber etc. Here we check if we have that format.
-
-        
+        # For the neural net model to work, the llpg columns have to be in the LPI format (e.g. with columns SaoText, SaoStartNumber etc. Here we check if we have that format.    
 
         if 'Address_LPI' in Matcher.ref_df.columns:
             Matcher.ref_df = Matcher.ref_df.rename(columns={
@@ -475,9 +480,9 @@ def check_ref_data_exists(Matcher:MatcherClass, ref_data_state:PandasDataFrame, 
         Matcher.ref_df = Matcher.ref_df.reset_index() #.drop(["index","level_0"], axis = 1, errors="ignore").reset_index().drop(["index","level_0"], axis = 1, errors="ignore")
         Matcher.ref_df.index.name = 'index'
 
-        return Matcher
+        return Matcher, final_api_output_file_name
 
-def check_match_data_filter(Matcher:MatcherClass, data_state:PandasDataFrame, results_data_state:PandasDataFrame, in_file:List[str], in_text:str, in_colnames:List[str], in_joincol:List[str], in_existing:List[str], in_api:List[str]):
+def load_match_data_and_filter(Matcher:MatcherClass, data_state:PandasDataFrame, results_data_state:PandasDataFrame, in_file:List[str], in_text:str, in_colnames:List[str], in_joincol:List[str], in_existing:List[str], in_api:List[str]):
     '''
     Check if data to be matched exists. Filter it according to which records are relevant in the reference dataset
     '''
@@ -654,6 +659,8 @@ def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, 
         '''
         Load in user inputs from the Gradio interface. Convert all input types (single address, or csv input) into standardised data format that can be used downstream for the fuzzy matching.
         '''
+        final_api_output_file_name = ""
+
         today_rev = datetime.now().strftime("%Y%m%d")
 
         # Abort flag for if it's not even possible to attempt the first stage of the match for some reason
@@ -662,16 +669,15 @@ def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, 
         ### ref_df FILES ###
         # If not an API call, run this first
         if not in_api:
-            Matcher = check_ref_data_exists(Matcher, ref_data_state, in_ref, in_refcol, in_api, in_api_key, query_type=in_api)
+            Matcher, final_api_output_file_name = load_ref_data(Matcher, ref_data_state, in_ref, in_refcol, in_api, in_api_key, query_type=in_api)
 
         ### MATCH/SEARCH FILES ###
         # If doing API calls, we need to know the search data before querying for specific addresses/postcodes
-        Matcher = check_match_data_filter(Matcher, data_state, results_data_state, in_file, in_text, in_colnames, in_joincol, in_existing, in_api)
+        Matcher = load_match_data_and_filter(Matcher, data_state, results_data_state, in_file, in_text, in_colnames, in_joincol, in_existing, in_api)
 
         # If an API call, ref_df data is loaded after
         if in_api:
-            
-            Matcher = check_ref_data_exists(Matcher, ref_data_state, in_ref, in_refcol, in_api, in_api_key, query_type=in_api)
+            Matcher, final_api_output_file_name = load_ref_data(Matcher, ref_data_state, in_ref, in_refcol, in_api, in_api_key, query_type=in_api)
             
         print("Shape of ref_df after filtering is: ", Matcher.ref_df.shape)
         print("Shape of search_df after filtering is: ", Matcher.search_df.shape)
@@ -682,23 +688,31 @@ def load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, 
         Matcher.match_results_output.to_csv(Matcher.match_outputs_name, index = None)
         Matcher.results_on_orig_df.to_csv(Matcher.results_orig_df_name, index = None)
         
-        return Matcher
+        return Matcher, final_api_output_file_name
 
 # Run whole matcher process
 def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame, results_data_state:PandasDataFrame, ref_data_state:PandasDataFrame, in_colnames:List[str], in_refcol:List[str], in_joincol:List[str], in_existing:List[str], in_api:str, in_api_key:str, InitMatch:MatcherClass = InitMatch, progress=gr.Progress()):  
     '''
     Split search and reference data into batches. Loop and run through the match script for each batch of data.
     '''
+    output_files = []
+
+    estimate_total_processing_time = 0.0
 
     overall_tic = time.perf_counter()
 
     # Load in initial data. This will filter to relevant addresses in the search and reference datasets that can potentially be matched, and will pull in API data if asked for.
-    InitMatch = load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, InitMatch, in_api, in_api_key)
+    InitMatch, final_api_output_file_name = load_matcher_data(in_text, in_file, in_ref, data_state, results_data_state, ref_data_state, in_colnames, in_refcol, in_joincol, in_existing, InitMatch, in_api, in_api_key)
+
+    if final_api_output_file_name:
+        output_files.append(final_api_output_file_name)
 
     if InitMatch.search_df.empty or InitMatch.ref_df.empty:
         out_message = "Nothing to match!"
         print(out_message)
-        return out_message, [InitMatch.results_orig_df_name, InitMatch.match_outputs_name]
+
+        output_files.extend([InitMatch.results_orig_df_name, InitMatch.match_outputs_name])
+        return out_message, output_files, estimate_total_processing_time
     
     # Run initial address preparation and standardisation processes   
     # Prepare address format
@@ -801,7 +815,7 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
                                                                    "Excluded from search":False,
                                                                     "Matched with reference address":False})
         else:
-            summary_of_summaries, BatchMatch_out = run_match_batch(BatchMatch, n, number_of_batches)
+            summary_of_summaries, BatchMatch_out = run_single_match_batch(BatchMatch, n, number_of_batches)
 
         OutputMatch = combine_two_matches(OutputMatch, BatchMatch_out, "All up to and including batch " + str(n+1))
 
@@ -837,7 +851,13 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
 
     final_summary = fuzzy_not_std_summary + "\n" + fuzzy_std_summary + "\n" + nnet_std_summary + "\n" + time_out
 
-    return final_summary, [OutputMatch.results_orig_df_name, OutputMatch.match_outputs_name]
+    
+
+    estimate_total_processing_time = sum_numbers_before_seconds(time_out)
+    print("Estimated total processing time:", str(estimate_total_processing_time))
+
+    output_files.extend([OutputMatch.results_orig_df_name, OutputMatch.match_outputs_name])
+    return final_summary, output_files, estimate_total_processing_time
 
 # Run a match run for a single batch
 def create_simple_batch_ranges(df:PandasDataFrame, ref_df:PandasDataFrame, batch_size:int, ref_batch_size:int):
@@ -963,7 +983,7 @@ def create_batch_ranges(df:PandasDataFrame, ref_df:PandasDataFrame, batch_size:i
     
     return lengths_df
 
-def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, progress=gr.Progress()):
+def run_single_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, progress=gr.Progress()):
     '''
     Over-arching function for running a single batch of data through the full matching process. Calls fuzzy matching, then neural network match functions in order. It outputs a summary of the match, and a MatcherClass with the matched data included.
     '''
@@ -979,7 +999,7 @@ def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, p
             
         ''' Run fuzzy match on non-standardised dataset '''
         
-        FuzzyNotStdMatch = orchestrate_match_run(Matcher = copy.copy(InitialMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
+        FuzzyNotStdMatch = orchestrate_single_match_batch(Matcher = copy.copy(InitialMatch), standardise = False, nnet = False, file_stub= "not_std_", df_name = df_name)
 
         if FuzzyNotStdMatch.abort_flag == True:
             message = "Nothing to match! Aborting address check."
@@ -999,7 +1019,7 @@ def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, p
         progress(.25, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Fuzzy match - standardised dataset")
         df_name = "Fuzzy standardised"
         
-        FuzzyStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNotStdMatch), standardise = True, nnet = False, file_stub= "std_", df_name = df_name)
+        FuzzyStdMatch = orchestrate_single_match_batch(Matcher = copy.copy(FuzzyNotStdMatch), standardise = True, nnet = False, file_stub= "std_", df_name = df_name)
         FuzzyStdMatch = combine_two_matches(FuzzyNotStdMatch, FuzzyStdMatch, df_name)
     
         ''' Continue if reference file in correct format, and neural net model exists. Also if data not too long '''
@@ -1022,7 +1042,7 @@ def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, p
         progress(.50, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Neural net - non-standardised dataset")
         df_name = "Neural net not standardised"
         
-        FuzzyNNetNotStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
+        FuzzyNNetNotStdMatch = orchestrate_single_match_batch(Matcher = copy.copy(FuzzyStdMatch), standardise = False, nnet = True, file_stub= "nnet_not_std_", df_name = df_name)
         FuzzyNNetNotStdMatch = combine_two_matches(FuzzyStdMatch, FuzzyNNetNotStdMatch, df_name)
     
         if (len(FuzzyNNetNotStdMatch.search_df_not_matched) == 0):
@@ -1035,7 +1055,7 @@ def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, p
         progress(.75, desc="Batch " + str(batch_n+1) + " of " + str(total_batches) + ". Neural net - standardised dataset")
         df_name = "Neural net standardised"
         
-        FuzzyNNetStdMatch = orchestrate_match_run(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
+        FuzzyNNetStdMatch = orchestrate_single_match_batch(Matcher = copy.copy(FuzzyNNetNotStdMatch), standardise = True, nnet = True, file_stub= "nnet_std_", df_name = df_name)
         FuzzyNNetStdMatch = combine_two_matches(FuzzyNNetNotStdMatch, FuzzyNNetStdMatch, df_name)
  
         if run_fuzzy_match == False:
@@ -1052,7 +1072,7 @@ def run_match_batch(InitialMatch:MatcherClass, batch_n:int, total_batches:int, p
     return summary_of_summaries, FuzzyNNetStdMatch
 
 # Overarching functions
-def orchestrate_match_run(Matcher, standardise = False, nnet = False, file_stub= "not_std_", df_name = "Fuzzy not standardised"):
+def orchestrate_single_match_batch(Matcher, standardise = False, nnet = False, file_stub= "not_std_", df_name = "Fuzzy not standardised"):
 
         today_rev = datetime.now().strftime("%Y%m%d")
         
@@ -1462,7 +1482,6 @@ def full_nn_match(ref_address_cols:List[str],
     else: results_on_orig_df = match_results_output_final_three
     
     return match_results_output_final_three, results_on_orig_df, summary_three, predict_df
-
 
 # Combiner/summary functions
 def combine_dfs_and_remove_dups(orig_df:PandasDataFrame, new_df:PandasDataFrame, index_col:str = "search_orig_address", match_address_series:str = "full_match", keep_only_duplicated:bool = False) -> PandasDataFrame:

@@ -49,49 +49,6 @@ def prepare_search_address_string(
 
     return search_df_out, key_field, address_cols, postcode_col
 
-# def prepare_search_address(
-#     search_df: pd.DataFrame, 
-#     address_cols: list,
-#     postcode_col: list,
-#     key_col: str
-# ) -> Tuple[pd.DataFrame, str]:
-    
-#     # Validate inputs
-#     if not isinstance(search_df, pd.DataFrame):
-#         raise TypeError("search_df must be a Pandas DataFrame")
-        
-#     if not isinstance(address_cols, list):
-#         raise TypeError("address_cols must be a list")
-        
-#     if not isinstance(postcode_col, list):
-#         raise TypeError("postcode_col must be a list")
-        
-#     if not isinstance(key_col, str):
-#         raise TypeError("key_col must be a string")
-        
-#     # Clean address columns
-#     clean_addresses = _clean_columns(search_df, address_cols)
-    
-#     # Join address columns into one
-#     full_addresses = _join_address(clean_addresses, address_cols)
-    
-#     # Add postcode column 
-#     full_df = _add_postcode_column(full_addresses, postcode_col)
-    
-#     # Remove postcode from main address if there was only one column in the input
-#     if postcode_col == "full_address_postcode":
-#         # Remove postcode from address
-#         address_series = remove_postcode(search_df, "full_address")
-#         search_df["full_address"] == address_series
-    
-#     # Ensure index column
-#     final_df = _ensure_index(full_df, key_col)
-
-#     #print(final_df)
-
-    
-#     return final_df, key_col
-
 def prepare_search_address(
     search_df: pd.DataFrame, 
     address_cols: list,
@@ -145,25 +102,7 @@ def _clean_columns(df, cols):
    df[cols] = df[cols].apply(clean_col)
     
    return df
-
-# def _clean_columns(df, cols):
-#     # Cleaning logic
-#     #print(df)
-
-#     #if isinstance(df, pl.DataFrame):
-#     #    print("It's a Polars DataFrame")
-
-#     def clean_col(col):
-#         col = col.str.replace("nan", "")
-#         col = col.apply(lambda x: re.sub(r'\s{2,}', ' ', str(x)), skip_nulls=False, return_dtype=str)  # replace any spaces greater than one with one
-#         return col.str.replace(",", " ").str.strip()  # replace commas with a space
-
-#     for col in cols:
-#         df = df.with_columns(clean_col(df[col]).alias(col))
-
-#     return df
-
-   
+ 
 def _join_address(df, cols):
    # Joining logic
    full_address = df[cols].apply(lambda row: ' '.join(row.values.astype(str)), axis=1)
@@ -289,43 +228,6 @@ def prepare_ref_address(ref_df, ref_address_cols, new_join_col = ['UPRN'], stand
         
     return ref_df_cleaned
 
-# def prepare_ref_address(ref_df:pl.DataFrame, ref_address_cols, new_join_col = ['UPRN'], standard_cols = True):
-    
-#     if ('SaoText' in ref_df.columns) | ("Secondary_Name_LPI" in ref_df.columns): 
-#         standard_cols = True
-#     else: 
-#         standard_cols = False
-
-#     ref_address_cols_uprn = list(ref_address_cols) + new_join_col
-#     ref_df_cleaned = ref_df[ref_address_cols_uprn].fill_null("")
-    
-#     # In on-prem LPI db street has been excluded, so put this back in
-#     if ('Street' not in ref_df_cleaned.columns) & ('Address_LPI' in ref_df_cleaned.columns): 
-#         ref_df_cleaned = ref_df_cleaned.with_column(pl.col('Address_LPI').apply(lambda x: extract_street_name(x)).alias('Street'))  
-        
-#     if ('Organisation' not in ref_df_cleaned.columns) & ('SaoText' in ref_df_cleaned.columns): 
-#         ref_df_cleaned = ref_df_cleaned.with_column(pl.lit("").alias('Organisation'))
-     
-#     #ref_df_cleaned['fulladdress'] = 
-        
-#     if standard_cols:
-#         pass
-#         # I can not write the full address code here as it depends on your extract_street_name and create_full_address function implementations. 
-#         # However, you might need to convert string types to object type for full address creation which may require more than just a few lines of codes. 
-#     else:
-#         pass    
-        
-#         # I can not write the full address code here as it depends on your extract_street_name and create_full_address function implementations.
-      
-#     if 'Street' not in ref_df_cleaned.columns:  
-#         ref_df_cleaned = ref_df_cleaned.with_column(pl.col('fulladdress').apply(extract_street_name).alias("Street"))
-    
-#     # Add index column
-#     ref_df_cleaned = ref_df_cleaned.with_column(pl.lit('').alias('ref_index'))
-        
-#     return ref_df_cleaned
-
-
 def extract_postcode(df, col:str) -> PandasSeries:
     '''
     Extract a postcode from a string column in a dataframe
@@ -334,7 +236,6 @@ def extract_postcode(df, col:str) -> PandasSeries:
     "(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2})|((GIR ?0A{2})\\b$)|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$)|(\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$)")
     
     return postcode_series
-
 
 # Remove addresses with no numbers in at all - too high a risk of badly assigning an address
 def check_no_number_addresses(df, in_address_series) -> PandasSeries:
@@ -352,7 +253,6 @@ def check_no_number_addresses(df, in_address_series) -> PandasSeries:
     #print(df[["full_address", "Excluded from search"]])
 
     return df
-
 
 def remove_postcode(df, col:str) -> PandasSeries:
     '''
