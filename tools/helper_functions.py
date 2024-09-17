@@ -108,13 +108,13 @@ def sum_numbers_before_seconds(string):
         """
 
         # Extract numbers before 'seconds' using regular expression
-        numbers = re.findall(r'\d+(\.\d+)?\s*seconds', string)
+        numbers = re.findall(r'(\d+\.\d+)?\s*seconds', string)
 
         # Extract the numbers from the matches
         numbers = [float(num.split()[0]) for num in numbers]
 
         # Sum up the extracted numbers
-        sum_of_numbers = sum(numbers)
+        sum_of_numbers = round(sum(numbers),1)
 
         return sum_of_numbers
 
