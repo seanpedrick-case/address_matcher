@@ -162,7 +162,7 @@ def create_full_address(df):
     
     return df["full_address"]
 
-def prepare_ref_address(ref_df, ref_address_cols, new_join_col = ['UPRN'], standard_cols = True):
+def prepare_ref_address(ref_df, ref_address_cols, new_join_col = [], standard_cols = True):
     
     if ('SaoText' in ref_df.columns) | ("Secondary_Name_LPI" in ref_df.columns): standard_cols = True
     else: standard_cols = False

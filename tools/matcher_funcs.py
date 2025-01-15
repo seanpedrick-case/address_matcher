@@ -355,10 +355,12 @@ def query_addressbase_api(in_api_key:str, Matcher:MatcherClass, query_type:str, 
                 # Matcher.ref_df = Matcher.ref_df.loc[Matcher.ref_df["LOCAL_CUSTODIAN_CODE"] != 7655,:] 
 
         if save_file:
-            final_api_output_file_name = output_folder + api_ref_save_loc[:-5] + ".parquet"
+            final_api_output_file_name_pq = output_folder + api_ref_save_loc[:-5] + ".parquet"
+            final_api_output_file_name = output_folder + api_ref_save_loc[:-5] + ".csv"
             print("Saving reference file to: " + api_ref_save_loc[:-5] + ".parquet")
             Matcher.ref_df.to_parquet(output_folder + api_ref_save_loc + ".parquet", index=False) # Save checkpoint as well
-            Matcher.ref_df.to_parquet(final_api_output_file_name, index=False)
+            Matcher.ref_df.to_parquet(final_api_output_file_name_pq, index=False)
+            Matcher.ref_df.to_csv(final_api_output_file_name)
 
         if Matcher.ref_df.empty:
             print ("No reference data found with API")

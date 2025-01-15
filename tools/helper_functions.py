@@ -50,6 +50,9 @@ def initial_data_load(in_file):
     output_message = ""
     results_df = pd.DataFrame()
     df = pd.DataFrame()
+
+    if not in_file:
+        return "No files provided.", gr.Dropdown(choices=[]), gr.Dropdown(choices=[]), df, results_df
     
     file_list = [string.name for string in in_file]
 
