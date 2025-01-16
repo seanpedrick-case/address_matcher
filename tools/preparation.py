@@ -169,7 +169,8 @@ def prepare_ref_address(ref_df, ref_address_cols, new_join_col = [], standard_co
     
     ref_address_cols_uprn = ref_address_cols.copy()
 
-    ref_address_cols_uprn.extend(new_join_col)
+    if new_join_col: ref_address_cols_uprn.extend(new_join_col)
+    
     ref_address_cols_uprn_w_ref = ref_address_cols_uprn.copy()
     ref_address_cols_uprn_w_ref.extend(["Reference file"])
 
