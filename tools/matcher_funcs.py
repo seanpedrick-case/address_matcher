@@ -710,7 +710,7 @@ def run_matcher(in_text:str, in_file:str, in_ref:str, data_state:PandasDataFrame
         output_files.append(final_api_output_file_name)
 
     if InitMatch.search_df.empty or InitMatch.ref_df.empty:
-        out_message = "Nothing to match!"
+        out_message = "Nothing to match! Search data frame or reference data frame are empty"
         print(out_message)
 
         output_files.extend([InitMatch.results_orig_df_name, InitMatch.match_outputs_name])
@@ -1352,7 +1352,7 @@ def full_nn_match(ref_address_cols:List[str],
     
     # Break if search item has length 0
     if search_df.empty:
-        out_error = "Nothing to match!"
+        out_error = "Nothing to match! At neural net matching stage."
         print(out_error)
         return pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(),pd.DataFrame(), out_error, search_address_cols
 

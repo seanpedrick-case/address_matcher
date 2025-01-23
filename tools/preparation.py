@@ -11,6 +11,7 @@ array = List[str]
 
 today = datetime.now().strftime("%d%m%Y")
 today_rev = datetime.now().strftime("%Y%m%d")
+from tools.standardise import remove_postcode
 
 
 def prepare_search_address_string(
@@ -72,6 +73,12 @@ def prepare_search_address(
     # Clean address columns
     #search_df_polars = pl.from_dataframe(search_df)
     clean_addresses = _clean_columns(search_df, address_cols)
+
+    # If there is a full address and postcode column in the addresses, clean any postcodes from the first column
+    if len(address_cols) == 2:
+        # Remove postcode from address
+        address_series = remove_postcode(clean_addresses, address_cols[0])
+        clean_addresses[address_cols[0]] = address_series
     
     # Join address columns into one
     full_addresses = _join_address(clean_addresses, address_cols)
@@ -255,14 +262,14 @@ def check_no_number_addresses(df, in_address_series) -> PandasSeries:
 
     return df
 
-def remove_postcode(df, col:str) -> PandasSeries:
-    '''
-    Remove a postcode from a string column in a dataframe
-    '''
-    address_series_no_pcode = df[col].str.upper().str.replace(\
-    "\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2}|GIR ?0A{2})\\b$|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$|\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$","", regex=True).str.lower()
+# def remove_postcode(df, col:str) -> PandasSeries:
+#     '''
+#     Remove a postcode from a string column in a dataframe
+#     '''
+#     address_series_no_pcode = df[col].str.upper().str.replace(\
+#     "\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9][A-Z]{2}|GIR ?0A{2})\\b$|(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]? ?[0-9]{1}?)$|\\b(?:[A-Z][A-HJ-Y]?[0-9][0-9A-Z]?)\\b$","", regex=True).str.lower()
     
-    return address_series_no_pcode
+#     return address_series_no_pcode
 
 def extract_street_name(address:str) -> str:
     """
