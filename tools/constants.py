@@ -215,7 +215,7 @@ else: exported_model = []
 ### ADDRESS MATCHING FUNCTIONS
 # Address matcher will try to match <batch_size> records in one go to avoid exceeding memory limits.
 batch_size = 10000
-ref_batch_size = 150000
+ref_batch_size = 20000
 
 ### Fuzzy match method
 

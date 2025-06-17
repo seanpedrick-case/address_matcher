@@ -182,7 +182,6 @@ def _create_fuzzy_match_results_output(results:PandasDataFrame, search_df_after_
                                       fuzzy_match_limit = fuzzy_match_limit, blocker_col=blocker_col)
         
         ## Fuzzy search results
-
         match_results_cols = ['search_orig_address','reference_orig_address', 'ref_index',
         'full_match',
         'full_number_match',
@@ -216,7 +215,7 @@ def _create_fuzzy_match_results_output(results:PandasDataFrame, search_df_after_
         joined_ref_cols = ["fulladdress", "Reference file"]
         joined_ref_cols.extend(new_join_col)
 
-        print("joined_ref_cols: ", joined_ref_cols)
+        #print("joined_ref_cols: ", joined_ref_cols)
         # Keep only columns that exist in reference dataset
         joined_ref_cols = [col for col in joined_ref_cols if col in ref_df_cleaned.columns]
 

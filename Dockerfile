@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/python:3.11.9-slim-bookworm
+FROM public.ecr.aws/docker/library/python:3.11.11-slim-bookworm
 
 # Install Lambda web adapter in case you want to run with with an AWS Lamba function URL
 #COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:0.8.3 /lambda-adapter /opt/extensions/lambda-adapter
@@ -10,9 +10,9 @@ WORKDIR /src
 
 COPY requirements_aws.txt .
 
-RUN pip install --no-cache-dir torch==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu && \
+RUN pip install --no-cache-dir torch==2.7.1+cpu --index-url https://download.pytorch.org/whl/cpu && \
 	pip install --no-cache-dir -r requirements_aws.txt && \
-	pip install --no-cache-dir gradio==4.44.0
+	pip install --no-cache-dir gradio==5.34.0
 
 # Set up a new user named "user" with user ID 1000
 RUN useradd -m -u 1000 user

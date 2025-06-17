@@ -17,3 +17,8 @@ build_deps/*
 build/*
 dist/*
 .vscode/*
+usage/*
+logs/*
+feedback/*
+input/*
+output/*

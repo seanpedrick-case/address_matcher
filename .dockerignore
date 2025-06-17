@@ -17,3 +17,8 @@ dist/*
 .ipynb_checkpoints/*
 orchestration/*
 .vscode/*
+usage/
+logs/
+feedback/
+input/
+output/
