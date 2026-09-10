@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fuzzy_address_matcher"
-version = "2.2.0"
+version = "2.2.1"
 description = "Match tabular address datasets together using address standardisation, rapidfuzz, and exact text matching via a Gradio GUI."
 readme = "README.md"
 authors = [
@@ -13,7 +13,7 @@ authors = [
 maintainers = [
     { name = "Sean Pedrick-Case", email = "spedrickcase@lambeth.gov.uk" },
 ]
-license = "Apache-2.0"
+license = "MIT"
 license-files = ["LICENSE"]
 keywords = [
     "address-matching",
